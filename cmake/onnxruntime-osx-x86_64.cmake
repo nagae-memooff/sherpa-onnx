@@ -12,9 +12,9 @@ if(NOT BUILD_SHARED_LIBS)
   message(FATAL_ERROR "This file is for building shared libraries. BUILD_SHARED_LIBS: ${BUILD_SHARED_LIBS}")
 endif()
 
-set(onnxruntime_URL  "https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-osx-x86_64-1.17.1.tgz")
-set(onnxruntime_URL2 "https://hf-mirror.com/csukuangfj/onnxruntime-libs/resolve/main/onnxruntime-osx-x86_64-1.17.1.tgz")
-set(onnxruntime_HASH "SHA256=86c6b6896434084ff5086eebc4e9ea90be1ed4d46743f92864f46ee43e7b5059")
+set(onnxruntime_URL  "https://github.com/microsoft/onnxruntime/releases/download/v1.23.1/onnxruntime-osx-x86_64-1.23.1.tgz")
+set(onnxruntime_URL2 "https://github.com/microsoft/onnxruntime/releases/download/v1.23.1/onnxruntime-osx-x86_64-1.23.1.tgz")
+set(onnxruntime_HASH "SHA256=06a105c0936accea5ad26ef9b835d3cfb76387e98075c652219d479362ab5ab9")
 
 # If you don't have access to the Internet,
 # please download onnxruntime to one of the following locations.
