@@ -1,15 +1,20 @@
-// sherpa-onnx/csrc/jieba-lexicon.cc
+// sherpa-onnx/csrc/character-lexicon.cc
 //
 // Copyright (c)  2022-2024  Xiaomi Corporation
 
-#include "sherpa-onnx/csrc/jieba-lexicon.h"
+#include "sherpa-onnx/csrc/character-lexicon.h"
 
 #include <algorithm>
 #include <fstream>
+#include <memory>
 #include <regex>  // NOLINT
+#include <sstream>
+#include <string>
 #include <strstream>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #if __ANDROID_API__ >= 9
 #include "android/asset_manager.h"
@@ -21,9 +26,9 @@
 #endif
 
 #include "sherpa-onnx/csrc/file-utils.h"
-#include "sherpa-onnx/csrc/jieba.h"
 #include "sherpa-onnx/csrc/macros.h"
 #include "sherpa-onnx/csrc/onnx-utils.h"
+#include "sherpa-onnx/csrc/phrase-matcher.h"
 #include "sherpa-onnx/csrc/symbol-table.h"
 #include "sherpa-onnx/csrc/text-utils.h"
 
@@ -37,28 +42,14 @@ static bool IsPunct(const std::string &s) {
   return puncts.count(s);
 }
 
-// end is inclusive
-static std::string GetWord(const std::vector<std::string> &words, int32_t start,
-                           int32_t end) {
-  std::string ans;
-
-  if (start >= words.size() || end >= words.size()) {
-    return ans;
-  }
-
-  for (int32_t i = start; i <= end; ++i) {
-    ans += words[i];
-  }
-
-  return ans;
-}
-
-class JiebaLexicon::Impl {
+class CharacterLexicon::Impl {
  public:
-  Impl(const std::string &lexicon, const std::string &tokens,
-       const std::string &dict_dir, bool debug)
+  Impl(const std::string &lexicon, const std::string &tokens, bool debug)
       : debug_(debug) {
-    jieba_ = InitJieba(dict_dir);
+    if (lexicon.empty()) {
+      SHERPA_ONNX_LOGE("Please provide lexicon.txt for this model");
+      SHERPA_ONNX_EXIT(-1);
+    }
 
     {
       std::ifstream is(tokens);
@@ -73,9 +64,12 @@ class JiebaLexicon::Impl {
 
   template <typename Manager>
   Impl(Manager *mgr, const std::string &lexicon, const std::string &tokens,
-       const std::string &dict_dir, bool debug)
+       bool debug)
       : debug_(debug) {
-    jieba_ = InitJieba(dict_dir);
+    if (lexicon.empty()) {
+      SHERPA_ONNX_LOGE("Please provide lexicon.txt for this model");
+      SHERPA_ONNX_EXIT(-1);
+    }
 
     {
       auto buf = ReadFile(mgr, tokens);
@@ -106,9 +100,7 @@ class JiebaLexicon::Impl {
     std::regex punct_re4("[!]");
     s = std::regex_replace(s, punct_re4, "！");
 
-    std::vector<std::string> words;
-    bool is_hmm = true;
-    jieba_->Cut(text, words, is_hmm);
+    std::vector<std::string> words = SplitUtf8(text);
 
     if (debug_) {
 #if __OHOS__
@@ -127,9 +119,10 @@ class JiebaLexicon::Impl {
       }
 
 #if __OHOS__
-      SHERPA_ONNX_LOGE("after jieba processing:\n%{public}s", os.str().c_str());
+      SHERPA_ONNX_LOGE("after splitting into UTF8:\n%{public}s",
+                       os.str().c_str());
 #else
-      SHERPA_ONNX_LOGE("after jieba processing:\n%s", os.str().c_str());
+      SHERPA_ONNX_LOGE("after splitting into UTF8:\n%s", os.str().c_str());
 #endif
     }
 
@@ -177,46 +170,9 @@ class JiebaLexicon::Impl {
     std::vector<TokenIDs> ans;
     std::vector<int64_t> this_sentence;
 
-    int32_t num_words = static_cast<int32_t>(words.size());
-    int32_t max_len = 10;
+    PhraseMatcher matcher(&all_words_, words, debug_);
 
-    for (int32_t i = 0; i < num_words;) {
-      int32_t start = i;
-      int32_t end = std::min(i + max_len, num_words - 1);
-
-      std::string w;
-      while (end > start) {
-        auto this_word = GetWord(words, start, end);
-        if (debug_) {
-#if __OHOS__
-          SHERPA_ONNX_LOGE("%{public}d-%{public}d: %{public}s", start, end,
-                           this_word.c_str());
-#else
-          SHERPA_ONNX_LOGE("%d-%d: %s", start, end, this_word.c_str());
-#endif
-        }
-        if (word2ids_.count(this_word)) {
-          i = end + 1;
-          w = std::move(this_word);
-          if (debug_) {
-#if __OHOS__
-            SHERPA_ONNX_LOGE("matched %{public}d-%{public}d: %{public}s", start,
-                             end, w.c_str());
-#else
-            SHERPA_ONNX_LOGE("matched %d-%d: %s", start, end, w.c_str());
-#endif
-          }
-          break;
-        }
-
-        end -= 1;
-      }
-
-      if (w.empty()) {
-        w = words[i];
-        i += 1;
-      }
-
+    for (const std::string &w : matcher) {
       auto ids = ConvertWordToIds(w);
       if (ids.empty()) {
 #if __OHOS__
@@ -233,7 +189,7 @@ class JiebaLexicon::Impl {
         ans.emplace_back(std::move(this_sentence));
         this_sentence = {};
       }
-    }  // for (const auto &w : words)
+    }  // for (const std::string &w : matcher)
 
     if (!this_sentence.empty()) {
       ans.emplace_back(std::move(this_sentence));
@@ -345,61 +301,65 @@ class JiebaLexicon::Impl {
 
       std::vector<int32_t> ids = ConvertTokensToIds(token2id_, token_list);
       if (ids.empty()) {
+        if (debug_) {
 #if __OHOS__
-        SHERPA_ONNX_LOGE("Empty token ids for %{public}s", line.c_str());
+          SHERPA_ONNX_LOGE("Empty token ids for '%{public}s'", line.c_str());
 #else
-        SHERPA_ONNX_LOGE("Empty token ids for %s", line.c_str());
+          SHERPA_ONNX_LOGE("Empty token ids for '%s'", line.c_str());
 #endif
+        }
         continue;
       }
 
       word2ids_.insert({std::move(word), std::move(ids)});
+    }
+
+    for (const auto &[key, _] : word2ids_) {
+      all_words_.insert(key);
     }
   }
 
  private:
   // lexicon.txt is saved in word2ids_
   std::unordered_map<std::string, std::vector<int32_t>> word2ids_;
+  std::unordered_set<std::string> all_words_;
 
   // tokens.txt is saved in token2id_
   std::unordered_map<std::string, int32_t> token2id_;
 
   std::unordered_map<int32_t, std::string> id2token_;
 
-  std::unique_ptr<cppjieba::Jieba> jieba_;
   bool debug_ = false;
 };
 
-JiebaLexicon::~JiebaLexicon() = default;
+CharacterLexicon::~CharacterLexicon() = default;
 
-JiebaLexicon::JiebaLexicon(const std::string &lexicon,
-                           const std::string &tokens,
-                           const std::string &dict_dir, bool debug)
-    : impl_(std::make_unique<Impl>(lexicon, tokens, dict_dir, debug)) {}
+CharacterLexicon::CharacterLexicon(const std::string &lexicon,
+                                   const std::string &tokens, bool debug)
+    : impl_(std::make_unique<Impl>(lexicon, tokens, debug)) {}
 
 template <typename Manager>
-JiebaLexicon::JiebaLexicon(Manager *mgr, const std::string &lexicon,
-                           const std::string &tokens,
-                           const std::string &dict_dir, bool debug)
-    : impl_(std::make_unique<Impl>(mgr, lexicon, tokens, dict_dir, debug)) {}
+CharacterLexicon::CharacterLexicon(Manager *mgr, const std::string &lexicon,
+                                   const std::string &tokens, bool debug)
+    : impl_(std::make_unique<Impl>(mgr, lexicon, tokens, debug)) {}
 
-std::vector<TokenIDs> JiebaLexicon::ConvertTextToTokenIds(
+std::vector<TokenIDs> CharacterLexicon::ConvertTextToTokenIds(
     const std::string &text, const std::string & /*unused_voice = ""*/) const {
   return impl_->ConvertTextToTokenIds(text);
 }
 
 #if __ANDROID_API__ >= 9
-template JiebaLexicon::JiebaLexicon(AAssetManager *mgr,
-                                    const std::string &lexicon,
-                                    const std::string &tokens,
-                                    const std::string &dict_dir, bool debug);
+template CharacterLexicon::CharacterLexicon(AAssetManager *mgr,
+                                            const std::string &lexicon,
+                                            const std::string &tokens,
+                                            bool debug);
 #endif
 
 #if __OHOS__
-template JiebaLexicon::JiebaLexicon(NativeResourceManager *mgr,
-                                    const std::string &lexicon,
-                                    const std::string &tokens,
-                                    const std::string &dict_dir, bool debug);
+template CharacterLexicon::CharacterLexicon(NativeResourceManager *mgr,
+                                            const std::string &lexicon,
+                                            const std::string &tokens,
+                                            bool debug);
 #endif
 
 }  // namespace sherpa_onnx

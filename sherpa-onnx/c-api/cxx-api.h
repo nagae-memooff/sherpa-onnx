@@ -67,7 +67,7 @@ struct OnlineCtcFstDecoderConfig {
 };
 
 struct HomophoneReplacerConfig {
-  std::string dict_dir;
+  std::string dict_dir;  // unused
   std::string lexicon;
   std::string rule_fsts;
 };
@@ -362,6 +362,8 @@ class SHERPA_ONNX_API OfflineRecognizer
 
   OfflineRecognizerResult GetResult(const OfflineStream *s) const;
 
+  // For unreal engine, please use this function
+  // See also https://github.com/k2-fsa/sherpa-onnx/discussions/1960
   std::shared_ptr<OfflineRecognizerResult> GetResultPtr(
       const OfflineStream *s) const;
 
@@ -379,7 +381,7 @@ struct OfflineTtsVitsModelConfig {
   std::string lexicon;
   std::string tokens;
   std::string data_dir;
-  std::string dict_dir;
+  std::string dict_dir;  // unused
 
   float noise_scale = 0.667;
   float noise_scale_w = 0.8;
@@ -392,7 +394,7 @@ struct OfflineTtsMatchaModelConfig {
   std::string lexicon;
   std::string tokens;
   std::string data_dir;
-  std::string dict_dir;
+  std::string dict_dir;  // unused
 
   float noise_scale = 0.667;
   float length_scale = 1.0;  // < 1, faster in speed; > 1, slower in speed
@@ -403,7 +405,7 @@ struct OfflineTtsKokoroModelConfig {
   std::string voices;
   std::string tokens;
   std::string data_dir;
-  std::string dict_dir;
+  std::string dict_dir;  // unused
   std::string lexicon;
   std::string lang;
 
@@ -419,11 +421,27 @@ struct OfflineTtsKittenModelConfig {
   float length_scale = 1.0;  // < 1, faster in speed; > 1, slower in speed
 };
 
+struct OfflineTtsZipvoiceModelConfig {
+  std::string tokens;
+  std::string text_model;
+  std::string flow_matching_model;
+  std::string vocoder;
+  std::string data_dir;
+  std::string pinyin_dict;
+
+  float feat_scale = 0.1;
+  float t_shift = 0.5;
+  float target_rms = 0.1;
+  float guidance_scale = 1.0;
+};
+
 struct OfflineTtsModelConfig {
   OfflineTtsVitsModelConfig vits;
   OfflineTtsMatchaModelConfig matcha;
   OfflineTtsKokoroModelConfig kokoro;
   OfflineTtsKittenModelConfig kitten;
+  OfflineTtsZipvoiceModelConfig zipvoice;
+
   int32_t num_threads = 1;
   bool debug = false;
   std::string provider = "cpu";
@@ -650,6 +668,8 @@ class SHERPA_ONNX_API VoiceActivityDetector
 
   SpeechSegment Front() const;
 
+  // For unreal engine, please use this function
+  // See also https://github.com/k2-fsa/sherpa-onnx/discussions/1960
   std::shared_ptr<SpeechSegment> FrontPtr() const;
 
   void Reset() const;
@@ -713,6 +733,54 @@ class SHERPA_ONNX_API OfflinePunctuation
 
  private:
   explicit OfflinePunctuation(const SherpaOnnxOfflinePunctuation *p);
+};
+
+// ============================================================================
+// Audio tagging
+// ============================================================================
+struct OfflineZipformerAudioTaggingModelConfig {
+  std::string model;
+};
+
+struct AudioTaggingModelConfig {
+  OfflineZipformerAudioTaggingModelConfig zipformer;
+  std::string ced;
+  int32_t num_threads = 1;
+  bool debug = false;  // true to print debug information of the model
+  std::string provider = "cpu";
+};
+
+struct AudioTaggingConfig {
+  AudioTaggingModelConfig model;
+  std::string labels;
+  int32_t top_k = 5;
+};
+
+struct AudioEvent {
+  std::string name;
+  int32_t index;
+  float prob;
+};
+
+class SHERPA_ONNX_API AudioTagging
+    : public MoveOnly<AudioTagging, SherpaOnnxAudioTagging> {
+ public:
+  static AudioTagging Create(const AudioTaggingConfig &config);
+
+  void Destroy(const SherpaOnnxAudioTagging *p) const;
+
+  OfflineStream CreateStream() const;
+  // when top_k is -1, it uses the top_k from config.top_k
+  // when top_k is > 0, config.top_k is ignored
+  std::vector<AudioEvent> Compute(const OfflineStream *s, int32_t top_k = -1);
+
+  // For unreal engine, please use this function
+  // See also https://github.com/k2-fsa/sherpa-onnx/discussions/1960
+  std::shared_ptr<std::vector<AudioEvent>> ComputePtr(const OfflineStream *s,
+                                                      int32_t top_k = -1);
+
+ private:
+  explicit AudioTagging(const SherpaOnnxAudioTagging *p);
 };
 
 }  // namespace sherpa_onnx::cxx
