@@ -52,7 +52,8 @@ class FastClustering::Impl {
     std::vector<double> height(num_rows - 1);
 
     fastclustercpp::hclust_fast(num_rows, distance.data(),
-                                fastclustercpp::HCLUST_METHOD_AVERAGE,
+//                              fastclustercpp::HCLUST_METHOD_AVERAGE,
+                                fastclustercpp::HCLUST_METHOD_CENTROID,
                                 merge.data(), height.data());
 
     std::vector<int32_t> labels(num_rows);

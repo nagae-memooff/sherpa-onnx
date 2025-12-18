@@ -134,6 +134,8 @@ def main():
         "sample_rate": sample_rate,
         "output_dim": output_dim,
         "normalize_samples": normalize_samples,
+        # Wespeaker 预处理包含全局均值归一化
+        "feature_normalize_type": "global-mean",
     }
     print(meta_data)
     add_meta_data(filename=str(model), meta_data=meta_data)

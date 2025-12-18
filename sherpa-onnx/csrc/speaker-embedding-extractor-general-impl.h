@@ -65,6 +65,11 @@ class SpeakerEmbeddingExtractorGeneralImpl
     int32_t feat_dim = features.size() / num_frames;
 
     const auto &meta_data = model_.GetMetaData();
+    // 这里打印后发现feature_normalize_type 实际取到了空值，所以原有代码的逻辑里，没有调用SubtractGlobalMean方法。
+    // 强制调用它之后，效果变好了很多。但这样强制调了，是否安全？
+    printf("feature_normalize_type is '%s'\n", meta_data.feature_normalize_type.c_str());
+    // SubtractGlobalMean(features.data(), num_frames, feat_dim);
+
     if (!meta_data.feature_normalize_type.empty()) {
       if (meta_data.feature_normalize_type == "global-mean") {
         SubtractGlobalMean(features.data(), num_frames, feat_dim);
