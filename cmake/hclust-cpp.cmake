@@ -4,7 +4,7 @@ function(download_hclust_cpp)
   # The latest commit as of 2024.09.29
   set(hclust_cpp_URL  "https://github.com/csukuangfj/hclust-cpp/archive/refs/tags/2024-09-29.tar.gz")
   set(hclust_cpp_URL2 "https://hf-mirror.com/csukuangfj/sherpa-onnx-cmake-deps/resolve/main/hclust-cpp-2024-09-29.tar.gz")
-  set(hclust_cpp_HASH "SHA256=a2037bcb260c0e5ec5c2b5344a5af7359a4c5c9c34c92e086adff3ae7f21d700")
+  set(hclust_cpp_HASH "SHA256=eed5209b9e5322f77dee1984525ef518daa51d6d0c7844ac42f887d9f18be818")
 
   # If you don't have access to the Internet,
   # please pre-download hclust-cpp
