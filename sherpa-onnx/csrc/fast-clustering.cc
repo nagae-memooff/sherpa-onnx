@@ -65,15 +65,21 @@ class FastClustering::Impl {
     }
 
     const char *env_pyannote_like = std::getenv("SHERPA_PYANNOTE_LIKE");
-    const bool use_pyannote_like =
-        (env_pyannote_like != nullptr) && (std::string(env_pyannote_like) == "true");
+    // 默认开启 pyannote_like，如需关闭显式设为 "false"/"0"
+    bool use_pyannote_like = true;
+    if (env_pyannote_like != nullptr) {
+      std::string v = env_pyannote_like;
+      for (auto &c : v) c = static_cast<char>(::tolower(c));
+      if (v == "0" || v == "false") use_pyannote_like = false;
+      if (v == "true") use_pyannote_like = true;
+    }
 
     if (use_pyannote_like) {
       printf("use pyannote like.\n");
       // 参考 pyannote：对小簇做二次合并，避免阈值导致碎片化
-      // min_cluster_size：基础值来自 SHERPA_MIN_CLUSTER_SIZE（默认 12），
+      // min_cluster_size：基础值来自 SHERPA_MIN_CLUSTER_SIZE（默认 24），
       // 再按 pyannote 的启发式裁剪：min(base, max(1, round(0.1 * N))).
-      int32_t base_min_cluster_size = 12;
+      int32_t base_min_cluster_size = 24;
       if (const char *env_min = std::getenv("SHERPA_MIN_CLUSTER_SIZE")) {
         try {
           int32_t v = std::stoi(env_min);
@@ -101,7 +107,7 @@ class FastClustering::Impl {
         // pyannote: 若没有大簇，则直接归为一个簇，避免碎片化
         for (auto &lbl : labels) lbl = 0;
       } else if (!small_clusters.empty()) {
-        // 计算各簇质心（使用前面统一处理过的 m：若归一化，则与 pyannote 度量一致）
+        // 计算各簇质心（使用前面统一处理过的 m）
         const int32_t dim = num_cols;
         std::unordered_map<int32_t, Eigen::VectorXd> centroids;
         for (auto &kv : cluster_size) {
@@ -114,12 +120,19 @@ class FastClustering::Impl {
           centroids[kv.first] /= static_cast<double>(kv.second);
         }
 
-        // 将小簇指派到最近的大簇（与上游相同的度量：归一化时欧氏等价于 1-cosine）
+        // 将小簇指派到最近的大簇（与上游相同的度量：1-cosine）
         for (int32_t sc : small_clusters) {
           double best_dist = std::numeric_limits<double>::infinity();
           int32_t best_lc = large_clusters.front();
           for (int32_t lc : large_clusters) {
-            double d = (centroids[sc] - centroids[lc]).norm();
+            double n1 = centroids[sc].norm();
+            double n2 = centroids[lc].norm();
+            double cos = 0.0;
+            if (n1 > 1e-12 && n2 > 1e-12) {
+              cos = centroids[sc].dot(centroids[lc]) / (n1 * n2);
+              cos = std::clamp(cos, -1.0, 1.0);
+            }
+            double d = 1.0 - cos;
             if (d < best_dist) {
               best_dist = d;
               best_lc = lc;
@@ -138,6 +151,156 @@ class FastClustering::Impl {
       }
     } else {
       printf("not use pyannote like.\n");
+    }
+
+    // 调试输出：打印簇间距离（最近/平均），便于人工判断是否可合并
+    const char *env_debug_dist = std::getenv("SHERPA_CLUSTER_DEBUG_DIST");
+    // 默认开启，如需关闭显式设为 "false"/"0"
+    bool debug_dist = true;
+    if (env_debug_dist != nullptr) {
+      std::string v = env_debug_dist;
+      for (auto &c : v) c = static_cast<char>(::tolower(c));
+      debug_dist = !(v == "0" || v == "false");
+    }
+
+    auto PrintClusterDistances = [&](const char *tag) {
+      // 计算当前簇质心
+      std::unordered_map<int32_t, Eigen::VectorXd> centroids;
+      std::unordered_map<int32_t, int32_t> counts;
+      for (int32_t lbl : labels) {
+        centroids.try_emplace(lbl, Eigen::VectorXd::Zero(num_cols));
+        counts[lbl] += 1;
+      }
+      for (int32_t i = 0; i < num_rows; ++i) {
+        centroids[labels[i]] += m.row(i).cast<double>();
+      }
+      for (auto &kv : centroids) {
+        kv.second /= static_cast<double>(counts[kv.first]);
+      }
+
+      printf("[cluster distances] %s\n", tag);
+      printf("  k=%zu\n", centroids.size());
+      // 按簇大小降序打印，便于观察大小与距离的关系
+      std::vector<std::pair<int32_t, int32_t>> size_list;
+      size_list.reserve(counts.size());
+      for (auto &kv : counts) {
+        size_list.push_back({kv.first, kv.second});
+      }
+      std::sort(size_list.begin(), size_list.end(),
+                [](const auto &a, const auto &b) {
+                  if (a.second != b.second) return a.second > b.second;
+                  return a.first < b.first;
+                });
+
+      for (auto &p : size_list) {
+        int32_t id = p.first;
+        int32_t sz = p.second;
+        double nearest = std::numeric_limits<double>::infinity();
+        int32_t nearest_id = -1;
+        double sum = 0.0;
+        int32_t cnt = 0;
+        for (auto &kv2 : centroids) {
+          if (kv2.first == id) continue;
+          // average 路径使用 1-cosine（与主流程一致）
+          double n1 = centroids[id].norm();
+          double n2 = kv2.second.norm();
+          double cos = 0.0;
+          if (n1 > 1e-12 && n2 > 1e-12) {
+            cos = centroids[id].dot(kv2.second) / (n1 * n2);
+            cos = std::clamp(cos, -1.0, 1.0);
+          }
+          double d = 1.0 - cos;
+          sum += d;
+          cnt += 1;
+          if (d < nearest) {
+            nearest = d;
+            nearest_id = kv2.first;
+          }
+        }
+        double avg = (cnt > 0) ? (sum / cnt) : 0.0;
+        printf("    cluster %d (size=%d): nearest=%.4f (to %d), avg=%.4f\n",
+               id, sz, nearest, nearest_id, avg);
+      }
+    };
+
+    if (debug_dist && !labels.empty()) {
+      PrintClusterDistances("before second-merge");
+    } else if (debug_dist) {
+      printf("[cluster distances] debug enabled but no labels to report\n");
+    }
+
+    // 可选的二次合并：按簇质心距离继续合并，进一步减少碎片化。
+    double merge_threshold = 0.4;  // 默认 0.4，可通过环境变量覆盖
+    if (const char *env_merge = std::getenv("SHERPA_CLUSTER_MERGE_THRESHOLD")) {
+      try {
+        merge_threshold = std::stod(env_merge);
+      } catch (...) {
+      }
+    }
+
+    if (merge_threshold > 0 && !labels.empty()) {
+      bool merged = true;
+      while (merged) {
+        merged = false;
+
+        // 计算当前簇质心
+        std::unordered_map<int32_t, Eigen::VectorXd> centroids;
+        std::unordered_map<int32_t, int32_t> counts;
+        for (int32_t lbl : labels) {
+          centroids.try_emplace(lbl, Eigen::VectorXd::Zero(num_cols));
+          counts[lbl] += 1;
+        }
+        for (int32_t i = 0; i < num_rows; ++i) {
+          centroids[labels[i]] += m.row(i).cast<double>();
+        }
+        for (auto &kv : centroids) {
+          kv.second /= static_cast<double>(counts[kv.first]);
+        }
+
+        // 找距离最近的簇对，若 1-cos 距离低于阈值则合并
+        std::vector<int32_t> ids;
+        ids.reserve(centroids.size());
+        for (auto &kv : centroids) ids.push_back(kv.first);
+
+        double best_dist = std::numeric_limits<double>::infinity();
+        int32_t a = -1, b = -1;
+        for (size_t i = 0; i + 1 < ids.size(); ++i) {
+          for (size_t j = i + 1; j < ids.size(); ++j) {
+            double n1 = centroids[ids[i]].norm();
+            double n2 = centroids[ids[j]].norm();
+            double cos = 0.0;
+            if (n1 > 1e-12 && n2 > 1e-12) {
+              cos = centroids[ids[i]].dot(centroids[ids[j]]) / (n1 * n2);
+              cos = std::clamp(cos, -1.0, 1.0);
+            }
+            double d = 1.0 - cos;
+            if (d < best_dist) {
+              best_dist = d;
+              a = ids[i];
+              b = ids[j];
+            }
+          }
+        }
+
+        if (best_dist > 0 && best_dist < merge_threshold && a != -1 && b != -1) {
+          for (int32_t &lbl : labels) {
+            if (lbl == b) lbl = a;
+          }
+          merged = true;
+        }
+      }
+
+      // 重编号为 0..K-1
+      std::unordered_map<int32_t, int32_t> remap;
+      int32_t idx = 0;
+      for (int32_t lbl : labels) {
+        if (remap.find(lbl) == remap.end()) remap[lbl] = idx++;
+      }
+      for (int32_t &lbl : labels) lbl = remap[lbl];
+
+      if (debug_dist && !labels.empty()) {
+        PrintClusterDistances("after second-merge");
+      }
     }
     return labels;
   }
