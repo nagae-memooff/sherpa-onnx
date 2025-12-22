@@ -165,6 +165,24 @@ class OfflineSpeakerDiarizationPyannoteImpl
       return {};
     }
 
+    // 如果只得到 1 个簇，直接构造结果返回，避免后续重标记/合并路径
+    {
+      int32_t max_cluster_index =
+          *std::max_element(cluster_labels.begin(), cluster_labels.end());
+      if (max_cluster_index <= 0) {
+        // speakers_per_frame 已反映每帧说话人数，强制单簇输出到 speaker 0
+        int32_t num_frames = speakers_per_frame.size();
+        Matrix2DInt32 final_labels(num_frames, 1);
+        final_labels.setZero();
+        for (int32_t i = 0; i != num_frames; ++i) {
+          if (speakers_per_frame[i] > 0) {
+            final_labels(i, 0) = 1;
+          }
+        }
+        return ComputeResult(final_labels);
+      }
+    }
+
     int32_t max_cluster_index =
         *std::max_element(cluster_labels.begin(), cluster_labels.end());
 
