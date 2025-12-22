@@ -4,6 +4,10 @@
 
 #include "sherpa-onnx/csrc/fast-clustering.h"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <unordered_map>
 #include <vector>
 
 #include "Eigen/Dense"
@@ -62,6 +66,15 @@ class FastClustering::Impl {
     } else {
       fastclustercpp::cutree_cdist(num_rows, merge.data(), height.data(),
                                    config_.threshold, labels.data());
+    }
+
+    // 若只有一个簇，直接返回，避免后续处理在 k=1 情况下再做多余操作
+    {
+      std::unordered_map<int32_t, int32_t> uniq;
+      for (int32_t lbl : labels) uniq[lbl] += 1;
+      if (uniq.size() <= 1) {
+        return labels;
+      }
     }
 
     const char *env_pyannote_like = std::getenv("SHERPA_PYANNOTE_LIKE");
@@ -223,6 +236,20 @@ class FastClustering::Impl {
       }
     };
 
+    // 若当前簇数已<=1，打印后直接返回，避免二次合并再进入异常路径
+    {
+      std::unordered_map<int32_t, int32_t> uniq;
+      for (int32_t lbl : labels) uniq[lbl] += 1;
+      if (uniq.size() <= 1) {
+        if (debug_dist && !labels.empty()) {
+          PrintClusterDistances("k<=1 skip second-merge");
+        } else if (debug_dist) {
+          printf("[cluster distances] debug enabled but no labels to report\n");
+        }
+        return labels;
+      }
+    }
+
     if (debug_dist && !labels.empty()) {
       PrintClusterDistances("before second-merge");
     } else if (debug_dist) {
@@ -249,6 +276,9 @@ class FastClustering::Impl {
         for (int32_t lbl : labels) {
           centroids.try_emplace(lbl, Eigen::VectorXd::Zero(num_cols));
           counts[lbl] += 1;
+        }
+        if (centroids.size() < 2) {
+          break;  // 不需要继续合并
         }
         for (int32_t i = 0; i < num_rows; ++i) {
           centroids[labels[i]] += m.row(i).cast<double>();
