@@ -275,6 +275,7 @@ function testOfflineAsr() {
   kotlinc-jvm -include-runtime -d $out_filename \
     test_offline_asr.kt \
     FeatureConfig.kt \
+    QnnConfig.kt \
     HomophoneReplacerConfig.kt \
     OfflineRecognizer.kt \
     OfflineStream.kt \
@@ -304,6 +305,7 @@ function testInverseTextNormalizationOfflineAsr() {
   kotlinc-jvm -include-runtime -d $out_filename \
     test_itn_offline_asr.kt \
     FeatureConfig.kt \
+    QnnConfig.kt \
     HomophoneReplacerConfig.kt \
     OfflineRecognizer.kt \
     OfflineStream.kt \
@@ -457,6 +459,7 @@ function testOfflineSenseVoiceWithHr() {
   kotlinc-jvm -include-runtime -d $out_filename \
     test_offline_sense_voice_with_hr.kt \
     FeatureConfig.kt \
+    QnnConfig.kt \
     HomophoneReplacerConfig.kt \
     OfflineRecognizer.kt \
     OfflineStream.kt \
@@ -478,6 +481,30 @@ function testOfflineNeMoCanary() {
   kotlinc-jvm -include-runtime -d $out_filename \
     test_offline_nemo_canary.kt \
     FeatureConfig.kt \
+    QnnConfig.kt \
+    HomophoneReplacerConfig.kt \
+    OfflineRecognizer.kt \
+    OfflineStream.kt \
+    WaveReader.kt \
+    faked-asset-manager.kt
+
+  ls -lh $out_filename
+  java -Djava.library.path=../build/lib -jar $out_filename
+}
+
+
+function testOfflineOmnilingualAsrCtc() {
+  if [ ! -f sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12/tokens.txt ]; then
+    curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2
+    tar xvf sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2
+    rm sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12.tar.bz2
+  fi
+
+  out_filename=test_offline_omnilingual_asr_ctc.jar
+  kotlinc-jvm -include-runtime -d $out_filename \
+    test_offline_omnilingual_asr_ctc.kt \
+    FeatureConfig.kt \
+    QnnConfig.kt \
     HomophoneReplacerConfig.kt \
     OfflineRecognizer.kt \
     OfflineStream.kt \
@@ -499,6 +526,7 @@ function testOfflineWenetCtc() {
   kotlinc-jvm -include-runtime -d $out_filename \
     test_offline_wenet_ctc.kt \
     FeatureConfig.kt \
+    QnnConfig.kt \
     HomophoneReplacerConfig.kt \
     OfflineRecognizer.kt \
     OfflineStream.kt \
@@ -511,6 +539,7 @@ function testOfflineWenetCtc() {
 
 testVersion
 
+testOfflineOmnilingualAsrCtc
 testOfflineWenetCtc
 testOfflineNeMoCanary
 testOfflineSenseVoiceWithHr

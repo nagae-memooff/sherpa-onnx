@@ -34,14 +34,6 @@
 
 namespace sherpa_onnx {
 
-static bool IsPunct(const std::string &s) {
-  static const std::unordered_set<std::string> puncts = {
-      ",",  ".",  "!",  "?", ":", "\"", "'", "，",
-      "。", "！", "？", "“", "”", "‘",  "’",
-  };
-  return puncts.count(s);
-}
-
 class CharacterLexicon::Impl {
  public:
   Impl(const std::string &lexicon, const std::string &tokens, bool debug)
@@ -274,6 +266,10 @@ class CharacterLexicon::Impl {
 
     while (std::getline(is, line)) {
       ++line_num;
+      if (line.find_first_not_of(" \t\n\v\f\r") == std::string::npos) {
+        // Line is empty or only spaces/tabs, skip it
+        continue;
+      }
 
       std::istringstream iss(line);
 

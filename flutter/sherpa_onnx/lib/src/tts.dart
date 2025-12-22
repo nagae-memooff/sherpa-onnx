@@ -36,14 +36,14 @@ class OfflineTtsVitsModelConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'model': model,
-        'lexicon': lexicon,
-        'tokens': tokens,
-        'dataDir': dataDir,
-        'noiseScale': noiseScale,
-        'noiseScaleW': noiseScaleW,
-        'lengthScale': lengthScale,
-      };
+    'model': model,
+    'lexicon': lexicon,
+    'tokens': tokens,
+    'dataDir': dataDir,
+    'noiseScale': noiseScale,
+    'noiseScaleW': noiseScaleW,
+    'lengthScale': lengthScale,
+  };
 
   final String model;
   final String lexicon;
@@ -85,14 +85,14 @@ class OfflineTtsMatchaModelConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'acousticModel': acousticModel,
-        'vocoder': vocoder,
-        'lexicon': lexicon,
-        'tokens': tokens,
-        'dataDir': dataDir,
-        'noiseScale': noiseScale,
-        'lengthScale': lengthScale,
-      };
+    'acousticModel': acousticModel,
+    'vocoder': vocoder,
+    'lexicon': lexicon,
+    'tokens': tokens,
+    'dataDir': dataDir,
+    'noiseScale': noiseScale,
+    'lengthScale': lengthScale,
+  };
 
   final String acousticModel;
   final String vocoder;
@@ -134,14 +134,14 @@ class OfflineTtsKokoroModelConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'model': model,
-        'voices': voices,
-        'tokens': tokens,
-        'dataDir': dataDir,
-        'lengthScale': lengthScale,
-        'lexicon': lexicon,
-        'lang': lang,
-      };
+    'model': model,
+    'voices': voices,
+    'tokens': tokens,
+    'dataDir': dataDir,
+    'lengthScale': lengthScale,
+    'lexicon': lexicon,
+    'lang': lang,
+  };
 
   final String model;
   final String voices;
@@ -178,12 +178,12 @@ class OfflineTtsKittenModelConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'model': model,
-        'voices': voices,
-        'tokens': tokens,
-        'dataDir': dataDir,
-        'lengthScale': lengthScale,
-      };
+    'model': model,
+    'voices': voices,
+    'tokens': tokens,
+    'dataDir': dataDir,
+    'lengthScale': lengthScale,
+  };
 
   final String model;
   final String voices;
@@ -192,12 +192,72 @@ class OfflineTtsKittenModelConfig {
   final double lengthScale;
 }
 
+class OfflineTtsZipVoiceModelConfig {
+  const OfflineTtsZipVoiceModelConfig({
+    this.tokens = '',
+    this.encoder = '',
+    this.decoder = '',
+    this.vocoder = '',
+    this.dataDir = '',
+    this.lexicon = '',
+    this.featScale = 0.1,
+    this.tShift = 0.5,
+    this.targetRms = 0.1,
+    this.guidanceScale = 1.0,
+  });
+
+  factory OfflineTtsZipVoiceModelConfig.fromJson(Map<String, dynamic> json) {
+    return OfflineTtsZipVoiceModelConfig(
+      tokens: json['tokens'] as String? ?? '',
+      encoder: json['encoder'] as String? ?? '',
+      decoder: json['decoder'] as String? ?? '',
+      vocoder: json['vocoder'] as String? ?? '',
+      dataDir: json['dataDir'] as String? ?? '',
+      lexicon: json['lexicon'] as String? ?? '',
+      featScale: (json['featScale'] as num?)?.toDouble() ?? 0.1,
+      tShift: (json['tShift'] as num?)?.toDouble() ?? 0.5,
+      targetRms: (json['targetRms'] as num?)?.toDouble() ?? 0.1,
+      guidanceScale: (json['guidanceScale'] as num?)?.toDouble() ?? 1.0,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'OfflineTtsZipVoiceModelConfig(tokens: $tokens, encoder: $encoder, decoder: $decoder, vocoder: $vocoder, dataDir: $dataDir, lexicon: $lexicon, featScale: $featScale, tShift: $tShift, targetRms: $targetRms, guidanceScale: $guidanceScale)';
+  }
+
+  Map<String, dynamic> toJson() => {
+    'tokens': tokens,
+    'encoder': encoder,
+    'decoder': decoder,
+    'vocoder': vocoder,
+    'dataDir': dataDir,
+    'lexicon': lexicon,
+    'featScale': featScale,
+    'tShift': tShift,
+    'targetRms': targetRms,
+    'guidanceScale': guidanceScale,
+  };
+
+  final String tokens;
+  final String encoder;
+  final String decoder;
+  final String vocoder;
+  final String dataDir;
+  final String lexicon;
+  final double featScale;
+  final double tShift;
+  final double targetRms;
+  final double guidanceScale;
+}
+
 class OfflineTtsModelConfig {
   const OfflineTtsModelConfig({
     this.vits = const OfflineTtsVitsModelConfig(),
     this.matcha = const OfflineTtsMatchaModelConfig(),
     this.kokoro = const OfflineTtsKokoroModelConfig(),
     this.kitten = const OfflineTtsKittenModelConfig(),
+    this.zipvoice = const OfflineTtsZipVoiceModelConfig(),
     this.numThreads = 1,
     this.debug = true,
     this.provider = 'cpu',
@@ -206,13 +266,20 @@ class OfflineTtsModelConfig {
   factory OfflineTtsModelConfig.fromJson(Map<String, dynamic> json) {
     return OfflineTtsModelConfig(
       vits: OfflineTtsVitsModelConfig.fromJson(
-          json['vits'] as Map<String, dynamic>? ?? const {}),
+        json['vits'] as Map<String, dynamic>? ?? const {},
+      ),
       matcha: OfflineTtsMatchaModelConfig.fromJson(
-          json['matcha'] as Map<String, dynamic>? ?? const {}),
+        json['matcha'] as Map<String, dynamic>? ?? const {},
+      ),
       kokoro: OfflineTtsKokoroModelConfig.fromJson(
-          json['kokoro'] as Map<String, dynamic>? ?? const {}),
+        json['kokoro'] as Map<String, dynamic>? ?? const {},
+      ),
       kitten: OfflineTtsKittenModelConfig.fromJson(
-          json['kitten'] as Map<String, dynamic>? ?? const {}),
+        json['kitten'] as Map<String, dynamic>? ?? const {},
+      ),
+      zipvoice: OfflineTtsZipVoiceModelConfig.fromJson(
+        json['zipvoice'] as Map<String, dynamic>? ?? const {},
+      ),
       numThreads: json['numThreads'] as int? ?? 1,
       debug: json['debug'] as bool? ?? true,
       provider: json['provider'] as String? ?? 'cpu',
@@ -221,23 +288,25 @@ class OfflineTtsModelConfig {
 
   @override
   String toString() {
-    return 'OfflineTtsModelConfig(vits: $vits, matcha: $matcha, kokoro: $kokoro, kitten: $kitten, numThreads: $numThreads, debug: $debug, provider: $provider)';
+    return 'OfflineTtsModelConfig(vits: $vits, matcha: $matcha, kokoro: $kokoro, kitten: $kitten, zipvoice: $zipvoice, numThreads: $numThreads, debug: $debug, provider: $provider)';
   }
 
   Map<String, dynamic> toJson() => {
-        'vits': vits.toJson(),
-        'matcha': matcha.toJson(),
-        'kokoro': kokoro.toJson(),
-        'kitten': kitten.toJson(),
-        'numThreads': numThreads,
-        'debug': debug,
-        'provider': provider,
-      };
+    'vits': vits.toJson(),
+    'matcha': matcha.toJson(),
+    'kokoro': kokoro.toJson(),
+    'kitten': kitten.toJson(),
+    'zipvoice': zipvoice.toJson(),
+    'numThreads': numThreads,
+    'debug': debug,
+    'provider': provider,
+  };
 
   final OfflineTtsVitsModelConfig vits;
   final OfflineTtsMatchaModelConfig matcha;
   final OfflineTtsKokoroModelConfig kokoro;
   final OfflineTtsKittenModelConfig kitten;
+  final OfflineTtsZipVoiceModelConfig zipvoice;
   final int numThreads;
   final bool debug;
   final String provider;
@@ -254,8 +323,9 @@ class OfflineTtsConfig {
 
   factory OfflineTtsConfig.fromJson(Map<String, dynamic> json) {
     return OfflineTtsConfig(
-      model:
-          OfflineTtsModelConfig.fromJson(json['model'] as Map<String, dynamic>),
+      model: OfflineTtsModelConfig.fromJson(
+        json['model'] as Map<String, dynamic>,
+      ),
       ruleFsts: json['ruleFsts'] as String? ?? '',
       maxNumSenetences: json['maxNumSenetences'] as int? ?? 1,
       ruleFars: json['ruleFars'] as String? ?? '',
@@ -269,12 +339,12 @@ class OfflineTtsConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'model': model.toJson(),
-        'ruleFsts': ruleFsts,
-        'maxNumSenetences': maxNumSenetences,
-        'ruleFars': ruleFars,
-        'silenceScale': silenceScale,
-      };
+    'model': model.toJson(),
+    'ruleFsts': ruleFsts,
+    'maxNumSenetences': maxNumSenetences,
+    'ruleFars': ruleFars,
+    'silenceScale': silenceScale,
+  };
 
   final OfflineTtsModelConfig model;
   final String ruleFsts;
@@ -284,10 +354,7 @@ class OfflineTtsConfig {
 }
 
 class GeneratedAudio {
-  GeneratedAudio({
-    required this.samples,
-    required this.sampleRate,
-  });
+  GeneratedAudio({required this.samples, required this.sampleRate});
 
   final Float32List samples;
   final int sampleRate;
@@ -301,6 +368,10 @@ class OfflineTts {
   /// The user is responsible to call the OfflineTts.free()
   /// method of the returned instance to avoid memory leak.
   factory OfflineTts(OfflineTtsConfig config) {
+    if (SherpaOnnxBindings.createOfflineTts == null) {
+      throw Exception("Please initialize sherpa-onnx first");
+    }
+
     final c = calloc<SherpaOnnxOfflineTtsConfig>();
     c.ref.model.vits.model = config.model.vits.model.toNativeUtf8();
     c.ref.model.vits.lexicon = config.model.vits.lexicon.toNativeUtf8();
@@ -310,8 +381,8 @@ class OfflineTts {
     c.ref.model.vits.noiseScaleW = config.model.vits.noiseScaleW;
     c.ref.model.vits.lengthScale = config.model.vits.lengthScale;
 
-    c.ref.model.matcha.acousticModel =
-        config.model.matcha.acousticModel.toNativeUtf8();
+    c.ref.model.matcha.acousticModel = config.model.matcha.acousticModel
+        .toNativeUtf8();
     c.ref.model.matcha.vocoder = config.model.matcha.vocoder.toNativeUtf8();
     c.ref.model.matcha.lexicon = config.model.matcha.lexicon.toNativeUtf8();
     c.ref.model.matcha.tokens = config.model.matcha.tokens.toNativeUtf8();
@@ -333,6 +404,17 @@ class OfflineTts {
     c.ref.model.kitten.dataDir = config.model.kitten.dataDir.toNativeUtf8();
     c.ref.model.kitten.lengthScale = config.model.kitten.lengthScale;
 
+    c.ref.model.zipvoice.tokens = config.model.zipvoice.tokens.toNativeUtf8();
+    c.ref.model.zipvoice.encoder = config.model.zipvoice.encoder.toNativeUtf8();
+    c.ref.model.zipvoice.decoder = config.model.zipvoice.decoder.toNativeUtf8();
+    c.ref.model.zipvoice.vocoder = config.model.zipvoice.vocoder.toNativeUtf8();
+    c.ref.model.zipvoice.dataDir = config.model.zipvoice.dataDir.toNativeUtf8();
+    c.ref.model.zipvoice.lexicon = config.model.zipvoice.lexicon.toNativeUtf8();
+    c.ref.model.zipvoice.featScale = config.model.zipvoice.featScale;
+    c.ref.model.zipvoice.tShift = config.model.zipvoice.tShift;
+    c.ref.model.zipvoice.targetRms = config.model.zipvoice.targetRms;
+    c.ref.model.zipvoice.guidanceScale = config.model.zipvoice.guidanceScale;
+
     c.ref.model.numThreads = config.model.numThreads;
     c.ref.model.debug = config.model.debug ? 1 : 0;
     c.ref.model.provider = config.model.provider.toNativeUtf8();
@@ -342,19 +424,18 @@ class OfflineTts {
     c.ref.ruleFars = config.ruleFars.toNativeUtf8();
     c.ref.silenceScale = config.silenceScale;
 
-    if (SherpaOnnxBindings.createOfflineTts == null) {
-      throw Exception("Please initialize sherpa-onnx first");
-    }
-
     final ptr = SherpaOnnxBindings.createOfflineTts?.call(c) ?? nullptr;
-
-    if (ptr == nullptr) {
-      throw Exception("Failed to create offline tts. Please check your config");
-    }
 
     calloc.free(c.ref.ruleFars);
     calloc.free(c.ref.ruleFsts);
     calloc.free(c.ref.model.provider);
+
+    calloc.free(c.ref.model.zipvoice.lexicon);
+    calloc.free(c.ref.model.zipvoice.dataDir);
+    calloc.free(c.ref.model.zipvoice.vocoder);
+    calloc.free(c.ref.model.zipvoice.decoder);
+    calloc.free(c.ref.model.zipvoice.encoder);
+    calloc.free(c.ref.model.zipvoice.tokens);
 
     calloc.free(c.ref.model.kitten.dataDir);
     calloc.free(c.ref.model.kitten.tokens);
@@ -378,6 +459,11 @@ class OfflineTts {
     calloc.free(c.ref.model.vits.tokens);
     calloc.free(c.ref.model.vits.lexicon);
     calloc.free(c.ref.model.vits.model);
+    calloc.free(c);
+
+    if (ptr == nullptr) {
+      throw Exception("Failed to create offline tts. Please check your config");
+    }
 
     return OfflineTts._(ptr: ptr, config: config);
   }
@@ -387,12 +473,15 @@ class OfflineTts {
     ptr = nullptr;
   }
 
-  GeneratedAudio generate(
-      {required String text, int sid = 0, double speed = 1.0}) {
+  GeneratedAudio generate({
+    required String text,
+    int sid = 0,
+    double speed = 1.0,
+  }) {
     final Pointer<Utf8> textPtr = text.toNativeUtf8();
     final p =
         SherpaOnnxBindings.offlineTtsGenerate?.call(ptr, textPtr, sid, speed) ??
-            nullptr;
+        nullptr;
     calloc.free(textPtr);
 
     if (p == nullptr) {
@@ -408,26 +497,35 @@ class OfflineTts {
     return GeneratedAudio(samples: newSamples, sampleRate: sampleRate);
   }
 
-  GeneratedAudio generateWithCallback(
-      {required String text,
-      int sid = 0,
-      double speed = 1.0,
-      required int Function(Float32List samples) callback}) {
+  GeneratedAudio generateWithCallback({
+    required String text,
+    int sid = 0,
+    double speed = 1.0,
+    required int Function(Float32List samples) callback,
+  }) {
     // see
     // https://github.com/dart-lang/sdk/issues/54276#issuecomment-1846109285
     // https://stackoverflow.com/questions/69537440/callbacks-in-dart-dartffi-only-supports-calling-static-dart-functions-from-nat
     // https://github.com/dart-lang/sdk/blob/main/tests/ffi/isolate_local_function_callbacks_test.dart#L46
     final wrapper =
-        NativeCallable<SherpaOnnxGeneratedAudioCallbackNative>.isolateLocal(
-            (Pointer<Float> samples, int n) {
-      final s = samples.asTypedList(n);
-      final newSamples = Float32List.fromList(s);
-      return callback(newSamples);
-    }, exceptionalReturn: 0);
+        NativeCallable<SherpaOnnxGeneratedAudioCallbackNative>.isolateLocal((
+          Pointer<Float> samples,
+          int n,
+        ) {
+          final s = samples.asTypedList(n);
+          final newSamples = Float32List.fromList(s);
+          return callback(newSamples);
+        }, exceptionalReturn: 0);
 
     final Pointer<Utf8> textPtr = text.toNativeUtf8();
-    final p = SherpaOnnxBindings.offlineTtsGenerateWithCallback
-            ?.call(ptr, textPtr, sid, speed, wrapper.nativeFunction) ??
+    final p =
+        SherpaOnnxBindings.offlineTtsGenerateWithCallback?.call(
+          ptr,
+          textPtr,
+          sid,
+          speed,
+          wrapper.nativeFunction,
+        ) ??
         nullptr;
 
     calloc.free(textPtr);

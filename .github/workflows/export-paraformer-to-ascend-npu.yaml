@@ -3,7 +3,7 @@ name: export-paraformer-to-ascend-npu
 on:
   push:
     branches:
-      - ascend-npu
+      - ascend-910b4-2
   workflow_dispatch:
 
 concurrency:
@@ -11,34 +11,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  generate_build_matrix:
+    if: github.repository_owner == 'csukuangfj' || github.repository_owner == 'k2-fsa'
+    # see https://github.com/pytorch/pytorch/pull/50633
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generating build matrix
+        id: set-matrix
+        run: |
+          # outputting for debugging purposes
+          python3 .github/scripts/export-ascend/generate_paraformer.py
+          MATRIX=$(python3 .github/scripts/export-ascend/generate_paraformer.py)
+
+          # deprecated
+          # echo "::set-output name=matrix::${MATRIX}"
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+
   export-paraformer-to-rknn:
+    needs: generate_build_matrix
     if: github.repository_owner == 'k2-fsa' || github.repository_owner == 'csukuangfj'
-    name: ${{ matrix.framework }}
-    runs-on: ${{ matrix.os }}
-    container:
-      # image: ascendai/cann:latest
-      # image: ascendai/cann:8.1.rc1-910b-ubuntu22.04-py3.10
-      # see https://hub.docker.com/r/gpustack/ascendai-cann/tags?name=8.0
-      image: gpustack/ascendai-cann:8.0.RC3-910b-ubuntu20.04-py3.9
+    name: ${{ matrix.framework }} ${{ matrix.soc_version }} ${{ matrix.cann }}
+    runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.8"]
-        framework: ["FunASR", "WSChuan-ASR"]
+        ${{ fromJson(needs.generate_build_matrix.outputs.matrix) }}
+
+    container:
+      image: ${{ matrix.image }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python ${{ matrix.python-version }}
+      - name: Setup Python 3.8
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.8"
 
       - name: Show Python
         shell: bash
         run: |
           python3 --version
+          which python3
 
       - name: Install curl
         shell: bash
@@ -51,9 +72,11 @@ jobs:
 
           find /usr/local/Ascend -name "libascend*.so" 2>/dev/null
 
-
           source /usr/local/Ascend/ascend-toolkit/set_env.sh
           export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/devlib/linux/x86_64:$LD_LIBRARY_PATH
+
+          # for cann 7.0.0
+          export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/devlib/x86_64:$LD_LIBRARY_PATH
 
           echo "CANN environment:"
           which atc || echo "atc not found"
@@ -109,6 +132,12 @@ jobs:
           source /usr/local/Ascend/ascend-toolkit/set_env.sh
           export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/devlib/linux/x86_64:$LD_LIBRARY_PATH
 
+          # for cann 7.0.0
+          export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/devlib/x86_64:$LD_LIBRARY_PATH
+
+          soc_version=${{ matrix.soc_version }}
+          cann=${{ matrix.cann }}
+
           atc --model=./predictor.onnx \
             --framework=5 \
             --host_env_os=linux \
@@ -116,7 +145,7 @@ jobs:
             --output=predictor \
             --input_format=ND \
             --input_shape="encoder_out:1,-1,512" \
-            --soc_version="Ascend910B"
+            --soc_version="Ascend${soc_version}"
 
           ls -lh *.om
 
@@ -127,7 +156,7 @@ jobs:
             --output=decoder \
             --input_format=ND \
             --input_shape="encoder_out:1,-1,512;acoustic_embedding:1,-1,512" \
-            --soc_version="Ascend910B"
+            --soc_version="Ascend${soc_version}"
 
           ls -lh *.om
 
@@ -138,13 +167,13 @@ jobs:
             --output=encoder \
             --input_format=ND \
             --input_shape="x:1,-1,560" \
-            --soc_version="Ascend910B"
+            --soc_version="Ascend${soc_version}"
 
           ls -lh *.om
 
 
           echo "collect results"
-          d=sherpa-onnx-ascend-910B-paraformer-zh-2023-03-28
+          d=sherpa-onnx-ascend-${soc_version}-cann-$cann-paraformer-zh-2023-03-28
 
           mkdir -p $d
           mkdir -p $d/test_wavs
@@ -199,6 +228,12 @@ jobs:
           source /usr/local/Ascend/ascend-toolkit/set_env.sh
           export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/devlib/linux/x86_64:$LD_LIBRARY_PATH
 
+          # for cann 7.0.0
+          export LD_LIBRARY_PATH=/usr/local/Ascend/ascend-toolkit/latest/x86_64-linux/devlib/x86_64:$LD_LIBRARY_PATH
+
+          soc_version=${{ matrix.soc_version }}
+          cann=${{ matrix.cann }}
+
           atc --model=./predictor.onnx \
             --framework=5 \
             --host_env_os=linux \
@@ -206,7 +241,7 @@ jobs:
             --output=predictor \
             --input_format=ND \
             --input_shape="encoder_out:1,-1,512" \
-            --soc_version="Ascend910B"
+            --soc_version="Ascend${soc_version}"
 
           ls -lh *.om
 
@@ -217,7 +252,7 @@ jobs:
             --output=decoder \
             --input_format=ND \
             --input_shape="encoder_out:1,-1,512;acoustic_embedding:1,-1,512" \
-            --soc_version="Ascend910B"
+            --soc_version="Ascend${soc_version}"
 
           ls -lh *.om
 
@@ -228,13 +263,13 @@ jobs:
             --output=encoder \
             --input_format=ND \
             --input_shape="x:1,-1,560" \
-            --soc_version="Ascend910B"
+            --soc_version="Ascend${soc_version}"
 
           ls -lh *.om
 
 
           echo "collect results"
-          d=sherpa-onnx-ascend-910B-paraformer-zh-2025-10-07
+          d=sherpa-onnx-ascend-${soc_version}-cann-$cann-paraformer-zh-2025-10-07
 
           mkdir -p $d
           mkdir -p $d/test_wavs
@@ -266,7 +301,7 @@ jobs:
           overwrite: true
           repo_name: k2-fsa/sherpa-onnx
           repo_token: ${{ secrets.UPLOAD_GH_SHERPA_ONNX_TOKEN }}
-          tag: asr-models
+          tag: asr-models-ascend
 
       - name: Release
         if: github.repository_owner == 'k2-fsa'
@@ -275,4 +310,4 @@ jobs:
           file_glob: true
           file: ./*.tar.bz2
           overwrite: true
-          tag: asr-models
+          tag: asr-models-ascend

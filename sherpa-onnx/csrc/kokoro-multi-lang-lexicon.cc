@@ -4,8 +4,9 @@
 
 #include "sherpa-onnx/csrc/kokoro-multi-lang-lexicon.h"
 
+#include <codecvt>
 #include <fstream>
-#include <regex>  // NOLINT
+#include <regex>
 #include <sstream>
 #include <string>
 #include <strstream>
@@ -23,11 +24,9 @@
 #include "rawfile/raw_file_manager.h"
 #endif
 
-#include <codecvt>
-
 #include "espeak-ng/speak_lib.h"
-#include "phoneme_ids.hpp"
-#include "phonemize.hpp"
+#include "phoneme_ids.hpp"  // NOLINT
+#include "phonemize.hpp"    // NOLINT
 #include "sherpa-onnx/csrc/file-utils.h"
 #include "sherpa-onnx/csrc/onnx-utils.h"
 #include "sherpa-onnx/csrc/phrase-matcher.h"
@@ -72,9 +71,6 @@ class KokoroMultiLangLexicon::Impl {
     // we cannot convert text to lowercase here since it will affect
     // how piper_phonemize handles punctuations inside the text
     std::string text = _text;
-    if (debug_) {
-      SHERPA_ONNX_LOGE("After converting to lowercase:\n%s", text.c_str());
-    }
 
     std::vector<std::pair<std::string, std::string>> replace_str_pairs = {
         {"，", ","}, {":", ","},  {"、", ","}, {"；", ";"},   {"：", ":"},
@@ -569,7 +565,7 @@ KokoroMultiLangLexicon::KokoroMultiLangLexicon(
     const std::string &data_dir, const OfflineTtsKokoroModelMetaData &meta_data,
     bool debug)
     : impl_(std::make_unique<Impl>(tokens, lexicon, data_dir, meta_data,
-                                   debug)) {}
+                                   debug)) {}  // NOLINT
 
 template <typename Manager>
 KokoroMultiLangLexicon::KokoroMultiLangLexicon(
@@ -577,7 +573,7 @@ KokoroMultiLangLexicon::KokoroMultiLangLexicon(
     const std::string &data_dir, const OfflineTtsKokoroModelMetaData &meta_data,
     bool debug)
     : impl_(std::make_unique<Impl>(mgr, tokens, lexicon, data_dir, meta_data,
-                                   debug)) {}
+                                   debug)) {}  // NOLINT
 
 std::vector<TokenIDs> KokoroMultiLangLexicon::ConvertTextToTokenIds(
     const std::string &text, const std::string &voice /*= ""*/) const {

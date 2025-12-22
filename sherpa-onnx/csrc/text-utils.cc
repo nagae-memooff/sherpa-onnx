@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -708,6 +709,14 @@ bool EndsWith(const std::string &haystack, const std::string &needle) {
   return std::equal(needle.rbegin(), needle.rend(), haystack.rbegin());
 }
 
+bool Contains(const std::string &haystack, const std::string &needle) {
+  if (needle.size() > haystack.size()) {
+    return false;
+  }
+
+  return haystack.find(needle) != std::string::npos;
+}
+
 std::vector<std::string> SplitString(const std::string &s, int32_t chunk_size) {
   std::vector<std::string> ans;
   if (chunk_size < 1 || chunk_size > s.size()) {
@@ -722,6 +731,17 @@ std::vector<std::string> SplitString(const std::string &s, int32_t chunk_size) {
     }
   }
   return ans;
+}
+
+std::string Join(const std::vector<std::string> &ss, const std::string &delim) {
+  std::ostringstream oss;
+  if (!ss.empty()) {
+    oss << ss[0];
+    for (size_t i = 1; i < ss.size(); ++i) {
+      oss << delim << ss[i];
+    }
+  }
+  return oss.str();
 }
 
 std::u32string Utf8ToUtf32(const std::string &str) {
@@ -797,6 +817,16 @@ std::string GetWord(const std::vector<std::string> &words, int32_t start,
   }
 
   return ans;
+}
+
+bool IsAlphaOrPunct(int ch) { return std::isalpha(ch) || std::ispunct(ch); }
+
+bool IsPunct(const std::string &s) {
+  static const std::unordered_set<std::string> puncts = {
+      ",",  ".",  "!",  "?", ":", "\"", "'", "，",
+      "。", "！", "？", "“", "”", "‘",  "’",
+  };
+  return puncts.count(s);
 }
 
 }  // namespace sherpa_onnx

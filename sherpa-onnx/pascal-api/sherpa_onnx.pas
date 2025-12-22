@@ -101,6 +101,22 @@ type
     class operator Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineTtsKittenModelConfig);
   end;
 
+  TSherpaOnnxOfflineTtsZipVoiceModelConfig = record
+    Tokens: AnsiString;
+    Encoder: AnsiString;
+    Decoder: AnsiString;
+    Vocoder: AnsiString;
+    DataDir: AnsiString;
+    Lexicon: AnsiString;
+    FeatScale: Single;
+    Tshift: Single;
+    TargetRms: Single;
+    GuidanceScale: Single;
+
+    function ToString: AnsiString;
+    class operator Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineTtsZipVoiceModelConfig);
+  end;
+
   TSherpaOnnxOfflineTtsModelConfig = record
     Vits: TSherpaOnnxOfflineTtsVitsModelConfig;
     NumThreads: Integer;
@@ -109,6 +125,7 @@ type
     Matcha: TSherpaOnnxOfflineTtsMatchaModelConfig;
     Kokoro: TSherpaOnnxOfflineTtsKokoroModelConfig;
     Kitten: TSherpaOnnxOfflineTtsKittenModelConfig;
+    ZipVoice: TSherpaOnnxOfflineTtsZipVoiceModelConfig;
 
     function ToString: AnsiString;
     class operator Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineTtsModelConfig);
@@ -318,6 +335,11 @@ type
     function ToString: AnsiString;
   end;
 
+  TSherpaOnnxOfflineOmnilingualAsrCtcModelConfig = record
+    Model: AnsiString;
+    function ToString: AnsiString;
+  end;
+
   TSherpaOnnxOfflineWhisperModelConfig = record
     Encoder: AnsiString;
     Decoder: AnsiString;
@@ -393,6 +415,7 @@ type
     ZipformerCtc: TSherpaOnnxOfflineZipformerCtcModelConfig;
     Canary: TSherpaOnnxOfflineCanaryModelConfig;
     WenetCtc: TSherpaOnnxOfflineWenetCtcModelConfig;
+    Omnilingual: TSherpaOnnxOfflineOmnilingualAsrCtcModelConfig;
     class operator Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineModelConfig);
     function ToString: AnsiString;
   end;
@@ -675,7 +698,6 @@ const
      {$linklib sherpa-onnx-kaldifst-core}
      {$linklib sherpa-onnx-fstfar}
      {$linklib sherpa-onnx-fst}
-     {$linklib cppinyin_core}
      {$linklib kissfft-float}
      {$linklib kaldi-native-fbank-core}
      {$linklib piper_phonemize}
@@ -803,6 +825,9 @@ type
   SherpaOnnxOfflineWenetCtcModelConfig = record
     Model: PAnsiChar;
   end;
+  SherpaOnnxOfflineOmnilingualAsrCtcModelConfig = record
+    Model: PAnsiChar;
+  end;
   SherpaOnnxOfflineWhisperModelConfig = record
     Encoder: PAnsiChar;
     Decoder: PAnsiChar;
@@ -860,6 +885,7 @@ type
     ZipformerCtc: SherpaOnnxOfflineZipformerCtcModelConfig;
     Canary: SherpaOnnxOfflineCanaryModelConfig;
     WenetCtc: SherpaOnnxOfflineWenetCtcModelConfig;
+    Omnilingual: SherpaOnnxOfflineOmnilingualAsrCtcModelConfig;
   end;
 
   SherpaOnnxOfflineRecognizerConfig = record
@@ -955,6 +981,19 @@ type
     LengthScale: cfloat;
   end;
 
+  SherpaOnnxOfflineTtsZipVoiceModelConfig = record
+    Tokens: PAnsiChar;
+    Encoder: PAnsiChar;
+    Decoder: PAnsiChar;
+    Vocoder: PAnsiChar;
+    DataDir: PAnsiChar;
+    Lexicon: PAnsiChar;
+    FeatScale: cfloat;
+    Tshift: cfloat;
+    TargetRms: cfloat;
+    GuidanceScale: cfloat;
+  end;
+
   SherpaOnnxOfflineTtsModelConfig = record
     Vits: SherpaOnnxOfflineTtsVitsModelConfig;
     NumThreads: cint32;
@@ -963,6 +1002,7 @@ type
     Matcha: SherpaOnnxOfflineTtsMatchaModelConfig;
     Kokoro: SherpaOnnxOfflineTtsKokoroModelConfig;
     Kitten: SherpaOnnxOfflineTtsKittenModelConfig;
+    ZipVoice: SherpaOnnxOfflineTtsZipVoiceModelConfig;
   end;
 
   SherpaOnnxOfflineTtsConfig = record
@@ -1673,6 +1713,12 @@ begin
     [Self.Model]);
 end;
 
+function TSherpaOnnxOfflineOmnilingualAsrCtcModelConfig.ToString: AnsiString;
+begin
+  Result := Format('TSherpaOnnxOfflineOmnilingualAsrCtcModelConfig(Model := %s)',
+    [Self.Model]);
+end;
+
 function TSherpaOnnxOfflineWhisperModelConfig.ToString: AnsiString;
 begin
   Result := Format('TSherpaOnnxOfflineWhisperModelConfig(' +
@@ -1763,7 +1809,8 @@ begin
     'Dolphin := %s, ' +
     'ZipformerCtc := %s, ' +
     'Canary := %s, ' +
-    'WenetCtc := %s' +
+    'WenetCtc := %s, ' +
+    'Omnilingual := %s' +
     ')',
     [Self.Transducer.ToString, Self.Paraformer.ToString,
      Self.NeMoCtc.ToString, Self.Whisper.ToString, Self.Tdnn.ToString,
@@ -1771,7 +1818,8 @@ begin
      Self.ModelType, Self.ModelingUnit, Self.BpeVocab,
      Self.TeleSpeechCtc, Self.SenseVoice.ToString, Self.Moonshine.ToString,
      Self.FireRedAsr.ToString, Self.Dolphin.ToString,
-     Self.ZipformerCtc.ToString, Self.Canary.ToString, Self.WenetCtc.ToString
+     Self.ZipformerCtc.ToString, Self.Canary.ToString, Self.WenetCtc.ToString,
+     Self.Omnilingual.ToString
      ]);
 end;
 
@@ -1851,6 +1899,7 @@ begin
   C.ModelConfig.Canary.UsePnc := Ord(Config.ModelConfig.Canary.UsePnc);
 
   C.ModelConfig.WenetCtc.Model := PAnsiChar(Config.ModelConfig.WenetCtc.Model);
+  C.ModelConfig.Omnilingual.Model := PAnsiChar(Config.ModelConfig.Omnilingual.Model);
 
   C.LMConfig.Model := PAnsiChar(Config.LMConfig.Model);
   C.LMConfig.Scale := Config.LMConfig.Scale;
@@ -2320,7 +2369,7 @@ begin
     'Tokens := %s, ' +
     'DataDir := %s, ' +
     'NoiseScale := %.2f, ' +
-    'LengthScale := %.2f'
+    'LengthScale := %.2f' +
     ')',
     [Self.AcousticModel, Self.Vocoder, Self.Lexicon, Self.Tokens,
      Self.DataDir, Self.NoiseScale, Self.LengthScale
@@ -2370,6 +2419,33 @@ begin
   Dest.LengthScale := 1.0;
 end;
 
+function TSherpaOnnxOfflineTtsZipVoiceModelConfig.ToString: AnsiString;
+begin
+  Result := Format('TSherpaOnnxOfflineTtsZipVoiceModelConfig(' +
+    'Tokens := %s, ' +
+    'Encoder := %s, ' +
+    'Decoder := %s, ' +
+    'Vocoder := %s, ' +
+    'DataDir := %s, ' +
+    'Lexicon := %s, ' +
+    'FeatScale := %.2f, ' +
+    'Tshift := %.2f, ' +
+    'TargetRms := %.2f, ' +
+    'GuidanceScale := %.2f' +
+    ')',
+    [Self.Tokens, Self.Encoder, Self.Decoder, Self.Vocoder,
+     Self.DataDir, Self.Lexicon, Self.FeatScale, Self.Tshift,
+     Self.TargetRms, Self.GuidanceScale]);
+end;
+
+class operator TSherpaOnnxOfflineTtsZipVoiceModelConfig.Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineTtsZipVoiceModelConfig);
+begin
+  Dest.FeatScale := 0.1;
+  Dest.Tshift := 0.5;
+  Dest.TargetRms := 0.1;
+  Dest.GuidanceScale := 1.0;
+end;
+
 function TSherpaOnnxOfflineTtsModelConfig.ToString: AnsiString;
 begin
   Result := Format('TSherpaOnnxOfflineTtsModelConfig(' +
@@ -2379,10 +2455,12 @@ begin
     'Provider := %s, ' +
     'Matcha := %s, ' +
     'Kokoro := %s, ' +
-    'Kitten := %s' +
+    'Kitten := %s, ' +
+    'ZipVoice := %s' +
     ')',
     [Self.Vits.ToString, Self.NumThreads, Self.Debug.ToString, Self.Provider,
-     Self.Matcha.ToString, Self.Kokoro.ToString, Self.Kitten.ToString
+     Self.Matcha.ToString, Self.Kokoro.ToString, Self.Kitten.ToString,
+     Self.ZipVoice.ToString
     ]);
 end;
 
@@ -2448,6 +2526,17 @@ begin
   C.Model.Kitten.Tokens := PAnsiChar(Config.Model.Kitten.Tokens);
   C.Model.Kitten.DataDir := PAnsiChar(Config.Model.Kitten.DataDir);
   C.Model.Kitten.LengthScale := Config.Model.Kitten.LengthScale;
+
+  C.Model.ZipVoice.Tokens := PAnsiChar(Config.Model.ZipVoice.Tokens);
+  C.Model.ZipVoice.Encoder := PAnsiChar(Config.Model.ZipVoice.Encoder);
+  C.Model.ZipVoice.Decoder := PAnsiChar(Config.Model.ZipVoice.Decoder);
+  C.Model.ZipVoice.Vocoder := PAnsiChar(Config.Model.ZipVoice.Vocoder);
+  C.Model.ZipVoice.DataDir := PAnsiChar(Config.Model.ZipVoice.DataDir);
+  C.Model.ZipVoice.Lexicon := PAnsiChar(Config.Model.ZipVoice.Lexicon);
+  C.Model.ZipVoice.FeatScale := Config.Model.ZipVoice.FeatScale;
+  C.Model.ZipVoice.Tshift := Config.Model.ZipVoice.Tshift;
+  C.Model.ZipVoice.TargetRms := Config.Model.ZipVoice.TargetRms;
+  C.Model.ZipVoice.GuidanceScale := Config.Model.ZipVoice.GuidanceScale;
 
   C.Model.NumThreads := Config.Model.NumThreads;
   C.Model.Provider := PAnsiChar(Config.Model.Provider);

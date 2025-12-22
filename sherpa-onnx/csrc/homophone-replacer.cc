@@ -4,7 +4,9 @@
 
 #include "sherpa-onnx/csrc/homophone-replacer.h"
 
+#include <cctype>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <strstream>
@@ -175,6 +177,9 @@ class HomophoneReplacer::Impl {
           current_pronunciations.clear();
         }
         ans += w;
+        if (isalpha(w[0])) {
+          ans.push_back(' ');
+        }
         continue;
       }
 
@@ -193,6 +198,10 @@ class HomophoneReplacer::Impl {
 
     if (config_.debug) {
       SHERPA_ONNX_LOGE("Output text: '%s'", ans.c_str());
+    }
+
+    if (!ans.empty() && ans.back() == ' ') {
+      ans.pop_back();
     }
 
     return ans;

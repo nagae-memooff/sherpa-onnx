@@ -480,6 +480,10 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineWenetCtcModelConfig {
   const char *model;
 } SherpaOnnxOfflineWenetCtcModelConfig;
 
+SHERPA_ONNX_API typedef struct SherpaOnnxOfflineOmnilingualAsrCtcModelConfig {
+  const char *model;
+} SherpaOnnxOfflineOmnilingualAsrCtcModelConfig;
+
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineModelConfig {
   SherpaOnnxOfflineTransducerModelConfig transducer;
   SherpaOnnxOfflineParaformerModelConfig paraformer;
@@ -506,6 +510,7 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineModelConfig {
   SherpaOnnxOfflineZipformerCtcModelConfig zipformer_ctc;
   SherpaOnnxOfflineCanaryModelConfig canary;
   SherpaOnnxOfflineWenetCtcModelConfig wenet_ctc;
+  SherpaOnnxOfflineOmnilingualAsrCtcModelConfig omnilingual;
 } SherpaOnnxOfflineModelConfig;
 
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineRecognizerConfig {
@@ -661,6 +666,11 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineRecognizerResult {
   // Pointer to continuous memory which holds durations (in seconds) for each
   // token It is NULL if the model does not support durations
   float *durations;
+
+  // Pointer to continuous memory which holds log probabilities (confidence)
+  // for each token. It is NULL if the model does not support probabilities.
+  // ys_log_probs[i] is the log probability for token i.
+  float *ys_log_probs;
 } SherpaOnnxOfflineRecognizerResult;
 
 /// Get the result of the offline stream.
@@ -1058,11 +1068,11 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineTtsKittenModelConfig {
 
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineTtsZipvoiceModelConfig {
   const char *tokens;
-  const char *text_model;
-  const char *flow_matching_model;
+  const char *encoder;
+  const char *decoder;
   const char *vocoder;
   const char *data_dir;
-  const char *pinyin_dict;
+  const char *lexicon;
   float feat_scale;
   float t_shift;
   float target_rms;

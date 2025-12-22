@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <strstream>
+#include <unordered_map>
 #include <utility>
 
 #if __ANDROID_API__ >= 9
@@ -130,14 +131,14 @@ std::unordered_map<std::string, int32_t> ReadTokens(
     iss >> std::ws;
     if (!iss.eof()) {
       SHERPA_ONNX_LOGE("Error: %s", line.c_str());
-      exit(-1);
+      SHERPA_ONNX_EXIT(-1);
     }
 
 #if 0
     if (token2id.count(sym)) {
       SHERPA_ONNX_LOGE("Duplicated token %s. Line %s. Existing ID: %d",
                        sym.c_str(), line.c_str(), token2id.at(sym));
-      exit(-1);
+      SHERPA_ONNX_EXIT(-1);
     }
 #endif
     if (id2token) {
@@ -233,7 +234,14 @@ std::ostream &operator<<(std::ostream &os, const SymbolTable &symbol_table) {
 void SymbolTable::ApplyBase64Decode() {
   sym2id_.clear();
   for (auto &p : id2sym_) {
-    p.second = Base64Decode(p.second);
+    if (p.second == " ") {
+      // for FunASR nano models, there is an empty string in the tokens.txt,
+      // which is converted to " " while reading it in sherpa-onnx. We convert
+      // it back to "" here
+      p.second = "";
+    } else {
+      p.second = Base64Decode(p.second);
+    }
     sym2id_[p.second] = p.first;
   }
 }

@@ -268,6 +268,10 @@ struct SHERPA_ONNX_API OfflineWenetCtcModelConfig {
   std::string model;
 };
 
+struct SHERPA_ONNX_API OfflineOmnilingualAsrCtcModelConfig {
+  std::string model;
+};
+
 struct SHERPA_ONNX_API OfflineMoonshineModelConfig {
   std::string preprocessor;
   std::string encoder;
@@ -297,6 +301,7 @@ struct SHERPA_ONNX_API OfflineModelConfig {
   OfflineZipformerCtcModelConfig zipformer_ctc;
   OfflineCanaryModelConfig canary;
   OfflineWenetCtcModelConfig wenet_ctc;
+  OfflineOmnilingualAsrCtcModelConfig omnilingual;
 };
 
 struct SHERPA_ONNX_API OfflineLMConfig {
@@ -423,11 +428,11 @@ struct OfflineTtsKittenModelConfig {
 
 struct OfflineTtsZipvoiceModelConfig {
   std::string tokens;
-  std::string text_model;
-  std::string flow_matching_model;
+  std::string encoder;
+  std::string decoder;
   std::string vocoder;
   std::string data_dir;
-  std::string pinyin_dict;
+  std::string lexicon;
 
   float feat_scale = 0.1;
   float t_shift = 0.5;
@@ -733,6 +738,35 @@ class SHERPA_ONNX_API OfflinePunctuation
 
  private:
   explicit OfflinePunctuation(const SherpaOnnxOfflinePunctuation *p);
+};
+
+// ============================================================================
+// Online Punctuation
+// ============================================================================
+struct OnlinePunctuationModelConfig {
+  std::string cnn_bilstm;
+  std::string bpe_vocab;
+  int32_t num_threads = 1;
+  bool debug = false;
+  std::string provider = "cpu";
+};
+
+struct OnlinePunctuationConfig {
+  OnlinePunctuationModelConfig model;
+};
+
+class SHERPA_ONNX_API OnlinePunctuation
+    : public MoveOnly<OnlinePunctuation, SherpaOnnxOnlinePunctuation> {
+ public:
+  static OnlinePunctuation Create(const OnlinePunctuationConfig &config);
+
+  void Destroy(const SherpaOnnxOnlinePunctuation *p) const;
+
+  // Add punctuations to the input text and return it.
+  std::string AddPunctuation(const std::string &text) const;
+
+ private:
+  explicit OnlinePunctuation(const SherpaOnnxOnlinePunctuation *p);
 };
 
 // ============================================================================

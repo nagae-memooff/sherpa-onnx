@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # Copyright      2025  Xiaomi Corp.        (authors: Fangjun Kuang)
 
-import argparse
 from typing import Tuple
 
 import kaldi_native_fbank as knf
 import numpy as np
 import soundfile as sf
-import torch
 from ais_bench.infer.interface import InferSession
 
 
@@ -25,23 +23,9 @@ class OmModel:
             print(i.name, i.datatype, i.shape)
 
     def __call__(self, x, prompt=None, language=None, text_norm=None):
-        if language is not None and text_norm is not None:
-            x_len = np.array([x.shape[1]], dtype=np.int32)
-            print(x.shape, x_len, language, text_norm)
-            return self.model.infer(
-                [x, x_len, language, text_norm], mode="dymshape", custom_sizes=10000000
-            )[0][0]
-        else:
-            return self.model.infer(
-                [x, prompt], mode="dymshape", custom_sizes=10000000
-            )[0][0]
-
-        return self.model.infer([x, prompt], mode="static", custom_sizes=10000000)[0][0]
-        logits_part1, logits_part2 = self.model.infer(
-            [x, prompt], mode="dymshape", custom_sizes=10000000
-        )
-        logits = np.concatenate([logits_part1, logits_part2], axis=0)
-        return logits
+        return self.model.infer([x, prompt], mode="dymshape", custom_sizes=10000000)[0][
+            0
+        ]
 
 
 def load_audio(filename: str) -> Tuple[np.ndarray, int]:
@@ -130,16 +114,12 @@ def main():
     text_norm = with_itn
 
     prompt = np.array([language, 1, 2, text_norm], dtype=np.int32)
-    # language = np.array([language], dtype=np.int32)
-    # text_norm = np.array([text_norm], dtype=np.int32)
 
     print("prompt", prompt.shape)
 
     logits = model(
         x=features[None],
         prompt=prompt,
-        # language=language,
-        ##text_norm=text_norm,
     )
     print("logits.shape", logits.shape, type(logits))
 
