@@ -4,7 +4,19 @@ set -ex
 
 cd dotnet-examples/
 
-cd ./version-test
+cd ./vad-non-streaming-funasr-nano
+./run-ten-vad.sh
+rm -fv *.onnx
+
+./run.sh
+rm -fv *.onnx
+
+cd ../non-streaming-funasr-nano-decode-files
+./run.sh
+ls -lh
+rm -rf sherpa-onnx-funasr-*
+
+cd ../version-test
 ./run.sh
 ls -lh
 
@@ -31,6 +43,9 @@ ls -lh
 rm -rf sherpa-onnx-nemo-*
 
 cd ../offline-decode-files
+
+./run-medasr-ctc.sh
+rm -rf sherpa-onnx-*
 
 ./run-omnilingual-asr-ctc.sh
 rm -rf sherpa-onnx-*

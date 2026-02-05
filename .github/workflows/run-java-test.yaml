@@ -108,6 +108,20 @@ jobs:
           cd ./java-api-examples
           ./run-version-test.sh
 
+      - name:  Run java test (FunASR Nano)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-non-streaming-decode-file-funasr-nano.sh
+          rm -rf sherpa-onnx-funasr-*
+
+      - name:  Run java test (MedASR CTC)
+        shell: bash
+        run: |
+          cd ./java-api-examples
+          ./run-non-streaming-decode-file-medasr-ctc.sh
+          rm -rf sherpa-onnx-medasr-*
+
       - name:  Run java test (Omnilingual ASR CTC)
         shell: bash
         run: |
@@ -321,6 +335,7 @@ jobs:
         run: |
           cd ./java-api-examples
 
+          ./run-pocket-tts.sh
           ./run-non-streaming-tts-kitten-en.sh
           ./run-non-streaming-tts-kokoro-zh-en.sh
           ./run-non-streaming-tts-kokoro-en.sh
@@ -328,6 +343,7 @@ jobs:
           ./run-non-streaming-tts-matcha-en.sh
           ls -lh
 
+          rm -rf sherpa-onnx-pocket-tts-*
           rm -rf kitten-nano-en-*
           rm -rf kokoro-multi-*
           rm -rf kokoro-en-*

@@ -28,6 +28,9 @@ if(SHERPA_ONNX_ENABLE_TTS)
 
   add_executable(kokoro-tts-zh-en-c-api kokoro-tts-zh-en-c-api.c)
   target_link_libraries(kokoro-tts-zh-en-c-api sherpa-onnx-c-api)
+
+  add_executable(pocket-tts-en-c-api pocket-tts-en-c-api.c)
+  target_link_libraries(pocket-tts-en-c-api sherpa-onnx-c-api)
 endif()
 
 if(SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION)
@@ -68,6 +71,9 @@ target_link_libraries(nemo-parakeet-c-api sherpa-onnx-c-api)
 add_executable(sense-voice-c-api sense-voice-c-api.c)
 target_link_libraries(sense-voice-c-api sherpa-onnx-c-api)
 
+add_executable(funasr-nano-c-api funasr-nano-c-api.c)
+target_link_libraries(funasr-nano-c-api sherpa-onnx-c-api)
+
 add_executable(sense-voice-with-hr-c-api sense-voice-with-hr-c-api.c)
 target_link_libraries(sense-voice-with-hr-c-api sherpa-onnx-c-api)
 
@@ -85,6 +91,9 @@ target_link_libraries(wenet-ctc-c-api sherpa-onnx-c-api)
 
 add_executable(omnilingual-asr-ctc-c-api omnilingual-asr-ctc-c-api.c)
 target_link_libraries(omnilingual-asr-ctc-c-api sherpa-onnx-c-api)
+
+add_executable(medasr-ctc-c-api medasr-ctc-c-api.c)
+target_link_libraries(medasr-ctc-c-api sherpa-onnx-c-api)
 
 add_executable(streaming-zipformer-c-api streaming-zipformer-c-api.c)
 target_link_libraries(streaming-zipformer-c-api sherpa-onnx-c-api)
