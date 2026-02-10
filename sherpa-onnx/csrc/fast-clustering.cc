@@ -257,7 +257,7 @@ class FastClustering::Impl {
     }
 
     // 可选的二次合并：按簇质心距离继续合并，进一步减少碎片化。
-    double merge_threshold = 0.33;  // 默认 0.33，可通过环境变量覆盖
+    double merge_threshold = 0.25;  // 默认 0.25，可通过环境变量覆盖
     if (const char *env_merge = std::getenv("SHERPA_CLUSTER_MERGE_THRESHOLD")) {
       try {
         merge_threshold = std::stod(env_merge);
