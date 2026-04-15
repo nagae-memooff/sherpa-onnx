@@ -69,6 +69,7 @@ def get_binaries():
         "sherpa-onnx-offline-tts",
         "sherpa-onnx-offline-tts-play",
         "sherpa-onnx-offline-websocket-server",
+        "sherpa-onnx-online-denoiser",
         "sherpa-onnx-online-punctuation",
         "sherpa-onnx-online-websocket-client",
         "sherpa-onnx-online-websocket-server",
@@ -136,7 +137,7 @@ class BuildExtension(build_ext):
         # build/lib.linux-x86_64-3.8
         os.makedirs(self.build_lib, exist_ok=True)
 
-        out_bin_dir = Path(self.build_lib).parent / "sherpa_onnx" / "bin"
+        out_bin_dir = Path(self.build_lib).resolve().parent / "sherpa_onnx" / "bin"
         install_dir = Path(self.build_lib).resolve() / "sherpa_onnx"
 
         sherpa_onnx_dir = Path(__file__).parent.parent.resolve()
@@ -188,22 +189,46 @@ class BuildExtension(build_ext):
                 """
 
             print(f"build command is:\n{build_cmd}")
-            
-            # Build cmake command as a list to prevent command injection
-            # Use shlex.split() for safer parsing of user-provided arguments
-            cmake_configure_cmd = ["cmake"] + shlex.split(cmake_args) + ["-B", str(self.build_temp), "-S", str(sherpa_onnx_dir)]
-            ret = subprocess.run(cmake_configure_cmd, shell=False).returncode
-            
+
+            cmake_configure_cmd = (
+                f'cmake {cmake_args} -B "{self.build_temp}" -S "{sherpa_onnx_dir}"'
+            )
+            print("cmake_configure_cmd", cmake_configure_cmd)
+
+            ret = subprocess.run(cmake_configure_cmd, shell=True).returncode
+
             if ret != 0:
-                raise Exception("Failed to configure sherpa")
+                raise Exception("Failed to configure sherpa-onnx")
 
             if not need_split_package():
-                cmake_build_cmd = ["cmake", "--build", str(self.build_temp), "--target", "install", "--config", "Release", "--", "-m:2"]
+                cmake_build_cmd = [
+                    "cmake",
+                    "--build",
+                    str(self.build_temp),
+                    "--target",
+                    "install",
+                    "--config",
+                    "Release",
+                    "--",
+                    "-m:2",
+                ]
+                print("cmake_build_cmd", cmake_build_cmd)
                 ret = subprocess.run(cmake_build_cmd, shell=False).returncode
             else:
-                cmake_build_cmd = ["cmake", "--build", str(self.build_temp), "--target", "_sherpa_onnx", "--config", "Release", "--", "-m:2"]
+                cmake_build_cmd = [
+                    "cmake",
+                    "--build",
+                    str(self.build_temp),
+                    "--target",
+                    "_sherpa_onnx",
+                    "--config",
+                    "Release",
+                    "--",
+                    "-m:2",
+                ]
+                print("cmake_build_cmd", cmake_build_cmd)
                 ret = subprocess.run(cmake_build_cmd, shell=False).returncode
-            
+
             if ret != 0:
                 raise Exception("Failed to build and install sherpa")
         else:
@@ -249,18 +274,18 @@ class BuildExtension(build_ext):
             # Use shlex.split() for safer parsing of user-provided arguments
             cmake_args_list = shlex.split(cmake_args)
             make_args_list = shlex.split(make_args) if make_args else []
-            
+
             # Change to build_temp directory and execute commands
             original_dir = os.getcwd()
             try:
                 os.chdir(self.build_temp)
-                
+
                 # Run cmake configuration
                 cmake_cmd = ["cmake"] + cmake_args_list + [str(sherpa_onnx_dir)]
                 ret = subprocess.run(cmake_cmd, shell=False).returncode
                 if ret != 0:
                     raise Exception("Failed to configure sherpa")
-                
+
                 # Run build command
                 if "-G Ninja" in cmake_args:
                     if not need_split_package():
@@ -272,11 +297,11 @@ class BuildExtension(build_ext):
                         build_cmd_list = ["make"] + make_args_list + ["install/strip"]
                     else:
                         build_cmd_list = ["make"] + make_args_list + ["_sherpa_onnx"]
-                
+
                 ret = subprocess.run(build_cmd_list, shell=False).returncode
             finally:
                 os.chdir(original_dir)
-            
+
             if ret != 0:
                 raise Exception(
                     "\nBuild sherpa-onnx failed. Please check the error message.\n"
