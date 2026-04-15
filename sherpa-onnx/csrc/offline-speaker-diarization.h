@@ -51,6 +51,9 @@ class OfflineSpeakerDiarizationImpl;
 
 using OfflineSpeakerDiarizationProgressCallback = std::function<int32_t(
     int32_t processed_chunks, int32_t num_chunks, void *arg)>;
+// callback(...) == 0 means continue processing.
+// callback(...) != 0 means stop as soon as the current stage boundary is
+// reached.
 
 class OfflineSpeakerDiarization {
  public:

@@ -16,7 +16,7 @@ static int32_t ProgressCallback(int32_t processed_chunks, int32_t num_chunks,
   float progress = 100.0 * processed_chunks / num_chunks;
   fprintf(stderr, "progress %.2f%%\n", progress);
 
-  // the return value is currently ignored
+  // Return a non-zero value to stop at the next stage boundary.
   return 0;
 }
 

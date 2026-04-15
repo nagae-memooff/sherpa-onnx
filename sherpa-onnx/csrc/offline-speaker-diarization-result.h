@@ -45,6 +45,9 @@ class OfflineSpeakerDiarizationResult {
   // Add a new segment
   void Add(const OfflineSpeakerDiarizationSegment &segment);
 
+  void SetStopped(bool stopped) { stopped_ = stopped; }
+  bool IsStopped() const { return stopped_; }
+
   // Number of distinct speakers contained in this object at this point
   int32_t NumSpeakers() const;
 
@@ -60,6 +63,7 @@ class OfflineSpeakerDiarizationResult {
 
  private:
   std::vector<OfflineSpeakerDiarizationSegment> segments_;
+  bool stopped_ = false;
 };
 
 }  // namespace sherpa_onnx

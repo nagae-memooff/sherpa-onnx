@@ -23,6 +23,7 @@ void PybindOfflineSpeakerDiarizationResult(py::module *m) {
   PybindOfflineSpeakerDiarizationSegment(m);
   using PyClass = OfflineSpeakerDiarizationResult;
   py::class_<PyClass>(*m, "OfflineSpeakerDiarizationResult")
+      .def_property_readonly("is_stopped", &PyClass::IsStopped)
       .def_property_readonly("num_speakers", &PyClass::NumSpeakers)
       .def_property_readonly("num_segments", &PyClass::NumSegments)
       .def("sort_by_start_time", &PyClass::SortByStartTime)
