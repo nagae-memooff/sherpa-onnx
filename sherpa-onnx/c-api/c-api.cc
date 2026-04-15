@@ -2312,6 +2312,11 @@ SherpaOnnxOfflineSpeakerDiarizationProcessWithCallbackNoArg(
 
   return ans;
 }
+
+int32_t SherpaOnnxOfflineSpeakerDiarizationResultIsStopped(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
+  return r->impl.IsStopped();
+}
 #else
 
 const SherpaOnnxOfflineSpeakerDiarization *
@@ -2397,6 +2402,13 @@ SherpaOnnxOfflineSpeakerDiarizationProcessWithCallbackNoArg(
   SHERPA_ONNX_LOGE(
       "Speaker diarization is not enabled. Please rebuild sherpa-onnx");
   return nullptr;
+}
+
+int32_t SherpaOnnxOfflineSpeakerDiarizationResultIsStopped(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
+  SHERPA_ONNX_LOGE(
+      "Speaker diarization is not enabled. Please rebuild sherpa-onnx");
+  return 0;
 }
 
 void SherpaOnnxOfflineSpeakerDiarizationDestroyResult(

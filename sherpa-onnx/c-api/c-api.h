@@ -1720,6 +1720,9 @@ SHERPA_ONNX_API void SherpaOnnxOfflineSpeakerDiarizationDestroySegment(
 
 typedef int32_t (*SherpaOnnxOfflineSpeakerDiarizationProgressCallback)(
     int32_t num_processed_chunks, int32_t num_total_chunks, void *arg);
+// callback(...) == 0 means continue processing.
+// callback(...) != 0 means stop as soon as the current stage boundary is
+// reached.
 
 typedef int32_t (*SherpaOnnxOfflineSpeakerDiarizationProgressCallbackNoArg)(
     int32_t num_processed_chunks, int32_t num_total_chunks);
@@ -1744,6 +1747,9 @@ SherpaOnnxOfflineSpeakerDiarizationProcessWithCallbackNoArg(
     const SherpaOnnxOfflineSpeakerDiarization *sd, const float *samples,
     int32_t n,
     SherpaOnnxOfflineSpeakerDiarizationProgressCallbackNoArg callback);
+
+SHERPA_ONNX_API int32_t SherpaOnnxOfflineSpeakerDiarizationResultIsStopped(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r);
 
 SHERPA_ONNX_API void SherpaOnnxOfflineSpeakerDiarizationDestroyResult(
     const SherpaOnnxOfflineSpeakerDiarizationResult *r);

@@ -95,9 +95,15 @@ class OfflineSpeakerDiarizationPyannoteImpl
       const float *audio, int32_t n,
       OfflineSpeakerDiarizationProgressCallback callback = nullptr,
       void *callback_arg = nullptr) const override {
-    std::vector<Matrix2D> segmentations = RunSpeakerSegmentationModel(audio, n);
+    bool stopped = false;
+    std::vector<Matrix2D> segmentations =
+        RunSpeakerSegmentationModel(audio, n, callback, callback_arg, &stopped);
     // segmentations[i] is for chunk_i
     // Each matrix is of shape (num_frames, num_powerset_classes)
+    if (stopped) {
+      return CreateStoppedResult();
+    }
+
     if (segmentations.empty()) {
       return {};
     }
@@ -112,10 +118,6 @@ class OfflineSpeakerDiarizationPyannoteImpl
     segmentations.clear();
 
     if (labels.size() == 1) {
-      if (callback) {
-        callback(1, 1, callback_arg);
-      }
-
       return HandleOneChunkSpecialCase(labels[0], n);
     }
 
@@ -139,7 +141,11 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     Matrix2D embeddings =
         ComputeEmbeddings(audio, n, chunk_speaker_samples_list_pair.second,
-                          &valid_indexes, std::move(callback), callback_arg);
+                          &valid_indexes, callback, callback_arg, &stopped);
+
+    if (stopped) {
+      return CreateStoppedResult();
+    }
 
     if (valid_indexes.size() != chunk_speaker_samples_list_pair.second.size()) {
       std::vector<Int32Pair> chunk_speaker_pair;
@@ -157,8 +163,23 @@ class OfflineSpeakerDiarizationPyannoteImpl
       chunk_speaker_samples_list_pair.second = std::move(sample_indexes);
     }
 
+    if (embeddings.rows() == 0) {
+      SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
+      return {};
+    }
+
+    if (ShouldStop(callback, valid_indexes.size(), embeddings.rows(),
+                   callback_arg)) {
+      return CreateStoppedResult();
+    }
+
     std::vector<int32_t> cluster_labels = clustering_->Cluster(
         &embeddings(0, 0), embeddings.rows(), embeddings.cols());
+
+    if (ShouldStop(callback, valid_indexes.size(), embeddings.rows(),
+                   callback_arg)) {
+      return CreateStoppedResult();
+    }
 
     if (cluster_labels.empty()) {
       SHERPA_ONNX_LOGE("No speakers found in the audio samples");
@@ -205,6 +226,18 @@ class OfflineSpeakerDiarizationPyannoteImpl
  private:
   void Init() { InitPowersetMapping(); }
 
+  static bool ShouldStop(OfflineSpeakerDiarizationProgressCallback callback,
+                         int32_t processed, int32_t total,
+                         void *callback_arg) {
+    return callback && callback(processed, total, callback_arg) != 0;
+  }
+
+  static OfflineSpeakerDiarizationResult CreateStoppedResult() {
+    OfflineSpeakerDiarizationResult ans;
+    ans.SetStopped(true);
+    return ans;
+  }
+
   // see also
   // https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/utils/powerset.py#L68
   void InitPowersetMapping() {
@@ -242,8 +275,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
   }
 
-  std::vector<Matrix2D> RunSpeakerSegmentationModel(const float *audio,
-                                                    int32_t n) const {
+  std::vector<Matrix2D> RunSpeakerSegmentationModel(
+      const float *audio, int32_t n,
+      OfflineSpeakerDiarizationProgressCallback callback, void *callback_arg,
+      bool *stopped) const {
     std::vector<Matrix2D> ans;
 
     const auto &meta_data = segmentation_model_.GetModelMetaData();
@@ -275,13 +310,18 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
       ans.push_back(std::move(m));
 
+      if (ShouldStop(callback, 1, 1, callback_arg)) {
+        *stopped = true;
+      }
+
       return ans;
     }
 
     int32_t num_chunks = (n - window_size) / window_shift + 1;
     bool has_last_chunk = ((n - window_size) % window_shift) > 0;
+    int32_t total_chunks = num_chunks + static_cast<int32_t>(has_last_chunk);
 
-    ans.reserve(num_chunks + has_last_chunk);
+    ans.reserve(total_chunks);
 
     const float *p = audio;
 
@@ -289,6 +329,11 @@ class OfflineSpeakerDiarizationPyannoteImpl
       Matrix2D m = ProcessChunk(p);
 
       ans.push_back(std::move(m));
+
+      if (ShouldStop(callback, i + 1, total_chunks, callback_arg)) {
+        *stopped = true;
+        return ans;
+      }
     }
 
     if (has_last_chunk) {
@@ -298,6 +343,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
       Matrix2D m = ProcessChunk(buf.data());
 
       ans.push_back(std::move(m));
+
+      if (ShouldStop(callback, total_chunks, total_chunks, callback_arg)) {
+        *stopped = true;
+      }
     }
 
     return ans;
@@ -486,7 +535,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
       const std::vector<std::vector<Int32Pair>> &sample_indexes,
       std::vector<int32_t> *valid_indexes,
       OfflineSpeakerDiarizationProgressCallback callback,
-      void *callback_arg) const {
+      void *callback_arg, bool *stopped) const {
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t sample_rate = meta_data.sample_rate;
     Matrix2D ans(sample_indexes.size(), embedding_extractor_.Dim());
@@ -525,8 +574,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
       k += 1;
 
-      if (callback) {
-        callback(k, ans.rows(), callback_arg);
+      if (ShouldStop(callback, k, ans.rows(), callback_arg)) {
+        *stopped = true;
+        break;
       }
     }
 
