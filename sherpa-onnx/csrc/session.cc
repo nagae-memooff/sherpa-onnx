@@ -144,7 +144,13 @@ Ort::SessionOptions GetSessionOptionsImpl(
   Ort::SessionOptions sess_opts;
   sess_opts.SetIntraOpNumThreads(num_threads);
 
+#if SHERPA_ONNX_ENABLE_WASM
+  // ORT's wasm-with-pthreads prebuild shares one libc pthread pool between
+  // intra-op and inter-op threads; inter_op > 1 starves the intra-op pool.
+  sess_opts.SetInterOpNumThreads(1);
+#else
   sess_opts.SetInterOpNumThreads(num_threads);
+#endif
 
   std::vector<std::string> available_providers = Ort::GetAvailableProviders();
   std::ostringstream os;
@@ -174,6 +180,24 @@ Ort::SessionOptions GetSessionOptionsImpl(
   if (config.find("ProfilingFilePrefix") != config.end()) {
     sess_opts.EnableProfiling(SHERPA_ONNX_TO_ORT_PATH(config["ProfilingFilePrefix"]));
     config.erase("ProfilingFilePrefix");
+  }
+
+  if (config.find("EnableMemPattern") != config.end()) {
+    int32_t enable_mem_pattern =
+        ToIntOrDefault(config["EnableMemPattern"], 1);
+    if (enable_mem_pattern == 0) {
+      sess_opts.DisableMemPattern();
+    }
+    config.erase("EnableMemPattern");
+  }
+
+  if (config.find("EnableCpuMemArena") != config.end()) {
+    int32_t enable_cpu_mem_arena =
+        ToIntOrDefault(config["EnableCpuMemArena"], 1);
+    if (enable_cpu_mem_arena == 0) {
+      sess_opts.DisableCpuMemArena();
+    }
+    config.erase("EnableCpuMemArena");
   }
 
   // If you want to speed up initialization, please uncomment the following line

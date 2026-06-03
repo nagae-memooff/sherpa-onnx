@@ -1,3 +1,59 @@
+## 1.13.2
+
+* Support Supertonic 3 TTS (#3605)
+* Release Supertonic3 TTS models (#3609)
+* Add Android demo for Supertonic3 TTS (#3612)
+* Add KittenTTS v0.8 support (#3591)
+* Export KittenTTS models (#3604)
+* Generate KittenTTS samples (#3607)
+* Export NeMo unified streaming 0.6b models (#3602)
+* Add buffered RNNT streaming path for Parakeet Unified (#3575)
+* Fix WASM onnxruntime pthread abort() crash (#3599)
+* Bump emsdk 4.0.23 (#3582)
+* Update onnxruntime package details for spacemit (#3610)
+
+## 1.13.1
+
+* Fix bugs in NeMo transducer modified beam search (#3589)
+* Add bounds checks to prevent SIGSEGV in speaker diarization (#3563)
+* Replace dead link with archived link (#3576)
+* Fix x64 gpu onnxruntime url (#3578)
+* Per-stream use_itn override via Stream::GetOptionInt for SenseVoice (#3565)
+
+## 1.13.0
+
+* Fix Flutter CI (#3560)
+* Fix building Flutter Android APPs (#3559)
+* Export nvidia/parakeet-unified-en-0.6b to sherpa-onnx (#3556)
+* Update nemotron-speech-streaming-en-0.6b (#3555)
+* Expose log probabilities in OfflineRecognizerResult for Go binding (#3553)
+
+## 1.12.40
+
+* Add more Piper TTS models (#3547)
+* Add two Piper Chinese TTS models (#3546)
+* Upload the piper sq_AL model (#3541)
+* Add Albanian (sq_AL) Piper TTS voice by LanguageWeaver (#3539)
+* Add Tauri APP demo for VAD+ASR from a microphone (#3540)
+* Improve Tauri VAD+ASR example: settings UI, bug fixes, and RTF display (#3538)
+* Fix releasing go packages (#3537)
+* Fix publishing dart packages for Android (#3522)
+* Avoid passing invalid utf8 str to JNI (#3527)
+* Build Tauri desktop APPs for VAD+ASR (#3530)
+
+## 1.12.39
+
+* Add tauri app example for non-streaming ASR + VAD (#3520)
+* Check for nullptr in c/cxx API (#3515)
+* Update go.mod and go.sum for the sherpa-onnx-go package. (#3516)
+* Fix an offset-by-one error in pyannote speaker diarization. (#3514)
+* Set context for thread in Ascend NPU (#3512)
+* Enable proxy support for downloader via ureq's proxy-from-env feature in rust-binding build.rs (#3507)
+* Add script to download all dependencies for offline use (#3506)
+* Update Eigen to v5.0.1 (#3505)
+* Fix building Python wheels for Windows (#3504)
+* Expose memory-related session options via config (#3503)
+
 ## 1.12.38
 
 * Update onnxruntime to use v1.24.4 (#3501)
