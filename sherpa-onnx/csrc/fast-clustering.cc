@@ -12,6 +12,7 @@
 
 #include "Eigen/Dense"
 #include "fastcluster-all-in-one.h"  // NOLINT
+#include "sherpa-onnx/csrc/run-log.h"
 
 namespace sherpa_onnx {
 
@@ -88,7 +89,7 @@ class FastClustering::Impl {
     }
 
     if (use_pyannote_like) {
-      printf("use pyannote like.\n");
+      WriteRunLogOrStdout("use pyannote like.\n");
       // 参考 pyannote：对小簇做二次合并，避免阈值导致碎片化
       // min_cluster_size：基础值来自 SHERPA_MIN_CLUSTER_SIZE（默认 24），
       // 再按 pyannote 的启发式裁剪：min(base, max(1, round(0.1 * N))).
@@ -163,7 +164,7 @@ class FastClustering::Impl {
         for (int32_t i = 0; i < num_rows; ++i) labels[i] = remap[labels[i]];
       }
     } else {
-      printf("not use pyannote like.\n");
+      WriteRunLogOrStdout("not use pyannote like.\n");
     }
 
     // 调试输出：打印簇间距离（最近/平均），便于人工判断是否可合并
@@ -191,8 +192,8 @@ class FastClustering::Impl {
         kv.second /= static_cast<double>(counts[kv.first]);
       }
 
-      printf("[cluster distances] %s\n", tag);
-      printf("  k=%zu\n", centroids.size());
+      WriteRunLogOrStdoutPrintf("[cluster distances] %s\n", tag);
+      WriteRunLogOrStdoutPrintf("  k=%zu\n", centroids.size());
       // 按簇大小降序打印，便于观察大小与距离的关系
       std::vector<std::pair<int32_t, int32_t>> size_list;
       size_list.reserve(counts.size());
@@ -231,8 +232,9 @@ class FastClustering::Impl {
           }
         }
         double avg = (cnt > 0) ? (sum / cnt) : 0.0;
-        printf("    cluster %d (size=%d): nearest=%.4f (to %d), avg=%.4f\n",
-               id, sz, nearest, nearest_id, avg);
+        WriteRunLogOrStdoutPrintf(
+            "    cluster %d (size=%d): nearest=%.4f (to %d), avg=%.4f\n", id,
+            sz, nearest, nearest_id, avg);
       }
     };
 
@@ -244,7 +246,8 @@ class FastClustering::Impl {
         if (debug_dist && !labels.empty()) {
           PrintClusterDistances("k<=1 skip second-merge");
         } else if (debug_dist) {
-          printf("[cluster distances] debug enabled but no labels to report\n");
+          WriteRunLogOrStdout(
+              "[cluster distances] debug enabled but no labels to report\n");
         }
         return labels;
       }
@@ -253,7 +256,8 @@ class FastClustering::Impl {
     if (debug_dist && !labels.empty()) {
       PrintClusterDistances("before second-merge");
     } else if (debug_dist) {
-      printf("[cluster distances] debug enabled but no labels to report\n");
+      WriteRunLogOrStdout(
+          "[cluster distances] debug enabled but no labels to report\n");
     }
 
     // 可选的二次合并：按簇质心距离继续合并，进一步减少碎片化。

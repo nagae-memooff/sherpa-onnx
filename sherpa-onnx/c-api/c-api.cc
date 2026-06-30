@@ -32,6 +32,7 @@
 #include "sherpa-onnx/csrc/online-recognizer.h"
 #include "sherpa-onnx/csrc/online-speech-denoiser.h"
 #include "sherpa-onnx/csrc/resample.h"
+#include "sherpa-onnx/csrc/run-log.h"
 #include "sherpa-onnx/csrc/speaker-embedding-extractor.h"
 #include "sherpa-onnx/csrc/speaker-embedding-manager.h"
 #include "sherpa-onnx/csrc/spoken-language-identification.h"
@@ -52,6 +53,20 @@
 const char *SherpaOnnxGetVersionStr() { return sherpa_onnx::GetVersionStr(); }
 const char *SherpaOnnxGetGitSha1() { return sherpa_onnx::GetGitSha1(); }
 const char *SherpaOnnxGetGitDate() { return sherpa_onnx::GetGitDate(); }
+
+int32_t SherpaOnnxSetRunLogFilePath(const char *path) {
+  return sherpa_onnx::SetRunLogFilePath(path) ? 1 : 0;
+}
+
+void SherpaOnnxClearRunLogFilePath() {
+  sherpa_onnx::ClearRunLogFilePath();
+}
+
+const char *SherpaOnnxGetLastRunLogError() {
+  static thread_local std::string s;
+  s = sherpa_onnx::GetLastRunLogError();
+  return s.c_str();
+}
 
 struct SherpaOnnxOnlineRecognizer {
   std::unique_ptr<sherpa_onnx::OnlineRecognizer> impl;

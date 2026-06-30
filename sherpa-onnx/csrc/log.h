@@ -7,9 +7,14 @@
 
 #include <stdio.h>
 
+#include <cstdint>
+#include <cstdlib>
 #include <mutex>  // NOLINT
+#include <stdexcept>
 #include <sstream>
 #include <string>
+
+#include "sherpa-onnx/csrc/run-log.h"
 
 namespace sherpa_onnx {
 
@@ -89,11 +94,11 @@ inline LogLevel GetCurrentLogLevel() {
     else if (s == "FATAL")
       log_level = FATAL;
     else
-      fprintf(stderr,
-              "Unknown SHERPA_ONNX_LOG_LEVEL: %s"
-              "\nSupported values are: "
-              "TRACE, DEBUG, INFO, WARNING, ERROR, FATAL",
-              s.c_str());
+      WriteRunLogOrStderrPrintf(
+          "Unknown SHERPA_ONNX_LOG_LEVEL: %s"
+          "\nSupported values are: "
+          "TRACE, DEBUG, INFO, WARNING, ERROR, FATAL",
+          s.c_str());
   });
   return log_level;
 }
@@ -118,27 +123,27 @@ class Logger {
     cur_level_ = GetCurrentLogLevel();
     switch (level) {
       case TRACE:
-        if (cur_level_ <= TRACE) fprintf(stderr, "[T] ");
+        if (cur_level_ <= TRACE) WriteRunLogOrStderr("[T] ");
         break;
       case DEBUG:
-        if (cur_level_ <= DEBUG) fprintf(stderr, "[D] ");
+        if (cur_level_ <= DEBUG) WriteRunLogOrStderr("[D] ");
         break;
       case INFO:
-        if (cur_level_ <= INFO) fprintf(stderr, "[I] ");
+        if (cur_level_ <= INFO) WriteRunLogOrStderr("[I] ");
         break;
       case WARNING:
-        if (cur_level_ <= WARNING) fprintf(stderr, "[W] ");
+        if (cur_level_ <= WARNING) WriteRunLogOrStderr("[W] ");
         break;
       case ERROR:
-        if (cur_level_ <= ERROR) fprintf(stderr, "[E] ");
+        if (cur_level_ <= ERROR) WriteRunLogOrStderr("[E] ");
         break;
       case FATAL:
-        if (cur_level_ <= FATAL) fprintf(stderr, "[F] ");
+        if (cur_level_ <= FATAL) WriteRunLogOrStderr("[F] ");
         break;
     }
 
     if (cur_level_ <= level_) {
-      fprintf(stderr, "%s:%u:%s ", filename, line_num, func_name);
+      WriteRunLogOrStderrPrintf("%s:%u:%s ", filename, line_num, func_name);
     }
   }
 
@@ -157,10 +162,10 @@ class Logger {
       https://github.com/csukuangfj/kaldi-native-fbank/issues/new
     )";
     if (level_ == FATAL) {
-      fprintf(stderr, "\n");
+      WriteRunLogOrStderr("\n");
       std::string stack_trace = GetStackTrace();
       if (!stack_trace.empty()) {
-        fprintf(stderr, "\n\n%s\n", stack_trace.c_str());
+        WriteRunLogOrStderrPrintf("\n\n%s\n", stack_trace.c_str());
       }
 
       fflush(nullptr);
@@ -181,50 +186,51 @@ class Logger {
 
   const Logger &operator<<(bool b) const {
     if (cur_level_ <= level_) {
-      fprintf(stderr, b ? "true" : "false");
+      WriteRunLogOrStderr(b ? "true" : "false");
     }
     return *this;
   }
 
   const Logger &operator<<(int8_t i) const {
-    if (cur_level_ <= level_) fprintf(stderr, "%d", i);
+    if (cur_level_ <= level_) WriteRunLogOrStderrPrintf("%d", i);
     return *this;
   }
 
   const Logger &operator<<(const char *s) const {
-    if (cur_level_ <= level_) fprintf(stderr, "%s", s);
+    if (cur_level_ <= level_) WriteRunLogOrStderrPrintf("%s", s);
     return *this;
   }
 
   const Logger &operator<<(int32_t i) const {
-    if (cur_level_ <= level_) fprintf(stderr, "%d", i);
+    if (cur_level_ <= level_) WriteRunLogOrStderrPrintf("%d", i);
     return *this;
   }
 
   const Logger &operator<<(uint32_t i) const {
-    if (cur_level_ <= level_) fprintf(stderr, "%u", i);
+    if (cur_level_ <= level_) WriteRunLogOrStderrPrintf("%u", i);
     return *this;
   }
 
   const Logger &operator<<(uint64_t i) const {
     if (cur_level_ <= level_)
-      fprintf(stderr, "%llu", (long long unsigned int)i);  // NOLINT
+      WriteRunLogOrStderrPrintf("%llu",
+                                (long long unsigned int)i);  // NOLINT
     return *this;
   }
 
   const Logger &operator<<(int64_t i) const {
     if (cur_level_ <= level_)
-      fprintf(stderr, "%lli", (long long int)i);  // NOLINT
+      WriteRunLogOrStderrPrintf("%lli", (long long int)i);  // NOLINT
     return *this;
   }
 
   const Logger &operator<<(float f) const {
-    if (cur_level_ <= level_) fprintf(stderr, "%f", f);
+    if (cur_level_ <= level_) WriteRunLogOrStderrPrintf("%f", f);
     return *this;
   }
 
   const Logger &operator<<(double d) const {
-    if (cur_level_ <= level_) fprintf(stderr, "%f", d);
+    if (cur_level_ <= level_) WriteRunLogOrStderrPrintf("%f", d);
     return *this;
   }
 

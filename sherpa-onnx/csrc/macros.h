@@ -8,6 +8,9 @@
 #include <stdlib.h>
 
 #include <utility>
+
+#include "sherpa-onnx/csrc/run-log.h"
+
 #if SHERPA_ONNX_ENABLE_WASM
 #include <emscripten.h>
 #endif
@@ -26,10 +29,10 @@
 #include "android/log.h"
 #define SHERPA_ONNX_LOGE(...)                                                  \
   do {                                                                         \
-    fprintf(stderr, "%s:%s:%d ", __FILE__, __func__,                           \
-            static_cast<int32_t>(__LINE__));                                   \
-    fprintf(stderr, ##__VA_ARGS__);                                            \
-    fprintf(stderr, "\n");                                                     \
+    sherpa_onnx::WriteRunLogOrStderrPrintf(                                    \
+        "%s:%s:%d ", __FILE__, __func__, static_cast<int32_t>(__LINE__));      \
+    sherpa_onnx::WriteRunLogOrStderrPrintf(__VA_ARGS__);                       \
+    sherpa_onnx::WriteRunLogOrStderr("\n");                                    \
     __android_log_print(ANDROID_LOG_WARN, "sherpa-onnx", "%s:%s:%d", __FILE__, \
                         __func__, static_cast<int32_t>(__LINE__));             \
     __android_log_print(ANDROID_LOG_WARN, "sherpa-onnx", ##__VA_ARGS__);       \
@@ -47,12 +50,12 @@
                    _buf);                                              \
   } while (0)
 #else
-#define SHERPA_ONNX_LOGE(...)                        \
-  do {                                               \
-    fprintf(stderr, "%s:%s:%d ", __FILE__, __func__, \
-            static_cast<int>(__LINE__));             \
-    fprintf(stderr, ##__VA_ARGS__);                  \
-    fprintf(stderr, "\n");                           \
+#define SHERPA_ONNX_LOGE(...)                                               \
+  do {                                                                      \
+    sherpa_onnx::WriteRunLogOrStderrPrintf(                                 \
+        "%s:%s:%d ", __FILE__, __func__, static_cast<int>(__LINE__));       \
+    sherpa_onnx::WriteRunLogOrStderrPrintf(__VA_ARGS__);                    \
+    sherpa_onnx::WriteRunLogOrStderr("\n");                                 \
   } while (0)
 #endif
 

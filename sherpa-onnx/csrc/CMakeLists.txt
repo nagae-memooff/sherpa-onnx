@@ -135,6 +135,7 @@ set(sources
   provider-config.cc
   provider.cc
   resample.cc
+  run-log.cc
   session.cc
   silero-vad-model-config.cc
   silero-vad-model.cc

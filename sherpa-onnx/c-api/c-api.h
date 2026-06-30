@@ -151,6 +151,31 @@ SHERPA_ONNX_API const char *SherpaOnnxGetGitSha1();
 SHERPA_ONNX_API const char *SherpaOnnxGetGitDate();
 
 /**
+ * @brief Set the process-wide run log file path.
+ *
+ * Passing NULL or an empty string disables the run log file sink and returns 1.
+ * Passing a non-empty path opens it in append mode, creating the file if it does
+ * not exist. The path is copied internally and only needs to remain valid during
+ * this call.
+ *
+ * @return 1 on success, 0 if the non-empty path could not be opened.
+ */
+SHERPA_ONNX_API int32_t SherpaOnnxSetRunLogFilePath(const char *path);
+
+/**
+ * @brief Disable the process-wide run log file sink.
+ */
+SHERPA_ONNX_API void SherpaOnnxClearRunLogFilePath(void);
+
+/**
+ * @brief Return the last run log setup/write error.
+ *
+ * The returned pointer is owned by sherpa-onnx and remains valid until this
+ * function is called again on the same thread.
+ */
+SHERPA_ONNX_API const char *SherpaOnnxGetLastRunLogError(void);
+
+/**
  * @brief Check whether a file exists.
  *
  * @param filename File path to test.
