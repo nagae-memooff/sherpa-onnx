@@ -80,8 +80,8 @@ Please replace --silero-vad-model with --ten-vad-model below to use ten-vad.
 
 ./python-api-examples/generate-subtitles.py  \
   --silero-vad-model=/path/to/silero_vad.onnx \
-  --sense-voice=./sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.onnx \
-  --tokens=./sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt \
+  --sense-voice=./sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx \
+  --tokens=./sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt \
   --num-threads=2 \
   /path/to/test.mp4
 
@@ -397,7 +397,7 @@ def get_args():
 
 
 def assert_file_exists(filename: str):
-    assert Path(filename).is_file(), (
+    assert Path(filename).exists(), (
         f"{filename} does not exist!\n"
         "Please refer to "
         "https://k2-fsa.github.io/sherpa/onnx/pretrained_models/index.html to download it"

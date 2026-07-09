@@ -24,6 +24,7 @@
 #include "sherpa-onnx/csrc/file-utils.h"
 #include "sherpa-onnx/csrc/keyword-spotter.h"
 #include "sherpa-onnx/csrc/macros.h"
+#include "sherpa-onnx/csrc/offline-diacritization.h"
 #include "sherpa-onnx/csrc/offline-punctuation.h"
 #include "sherpa-onnx/csrc/offline-recognizer.h"
 #include "sherpa-onnx/csrc/offline-source-separation.h"
@@ -2721,6 +2722,24 @@ struct SherpaOnnxLinearResampler {
 const SherpaOnnxLinearResampler *SherpaOnnxCreateLinearResampler(
     int32_t samp_rate_in_hz, int32_t samp_rate_out_hz, float filter_cutoff_hz,
     int32_t num_zeros) {
+  if (samp_rate_in_hz <= 0 || samp_rate_out_hz <= 0) {
+    SHERPA_ONNX_LOGE("Sample rates must be > 0. Given in=%d out=%d",
+                     samp_rate_in_hz, samp_rate_out_hz);
+    return nullptr;
+  }
+  if (num_zeros < 0) {
+    SHERPA_ONNX_LOGE("num_zeros must be >= 0. Given %d", num_zeros);
+    return nullptr;
+  }
+  if (filter_cutoff_hz == 0) {
+    float min_freq = std::min(samp_rate_in_hz, samp_rate_out_hz);
+    filter_cutoff_hz = 0.99f * 0.5f * min_freq;
+  }
+
+  if (num_zeros == 0) {
+    num_zeros = 6;
+  }
+
   SherpaOnnxLinearResampler *p = new SherpaOnnxLinearResampler;
   p->impl = std::make_unique<sherpa_onnx::LinearResample>(
       samp_rate_in_hz, samp_rate_out_hz, filter_cutoff_hz, num_zeros);
@@ -3648,3 +3667,72 @@ SherpaOnnxCreateOfflineSourceSeparationOHOS(
 }
 
 #endif  // #ifdef __OHOS__
+
+struct SherpaOnnxOfflineDiacritization {
+  std::unique_ptr<sherpa_onnx::OfflineDiacritization> impl;
+};
+
+static sherpa_onnx::OfflineDiacritizationConfig GetOfflineDiacritizationConfig(
+    const SherpaOnnxOfflineDiacritizationConfig *config) {
+  sherpa_onnx::OfflineDiacritizationConfig c;
+  c.model.catt_encoder = SHERPA_ONNX_OR(config->model.catt_encoder, "");
+  c.model.catt_decoder = SHERPA_ONNX_OR(config->model.catt_decoder, "");
+  c.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  c.model.debug = config->model.debug;
+  c.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
+  if (c.model.provider.empty()) {
+    c.model.provider = "cpu";
+  }
+
+  if (config->model.debug) {
+#if __OHOS__
+    SHERPA_ONNX_LOGE("%{public}s\n", c.ToString().c_str());
+#else
+    SHERPA_ONNX_LOGE("%s\n", c.ToString().c_str());
+#endif
+  }
+
+  return c;
+}
+
+const SherpaOnnxOfflineDiacritization *SherpaOnnxCreateOfflineDiacritization(
+    const SherpaOnnxOfflineDiacritizationConfig *config) {
+  if (config == nullptr) {
+    return nullptr;
+  }
+
+  auto cfg = GetOfflineDiacritizationConfig(config);
+
+  if (!cfg.Validate()) {
+    SHERPA_ONNX_LOGE("Errors in config");
+    return nullptr;
+  }
+
+  SherpaOnnxOfflineDiacritization *diacrt = new SherpaOnnxOfflineDiacritization;
+  diacrt->impl = std::make_unique<sherpa_onnx::OfflineDiacritization>(cfg);
+
+  return diacrt;
+}
+
+void SherpaOnnxDestroyOfflineDiacritization(
+    const SherpaOnnxOfflineDiacritization *diacrt) {
+  if (!diacrt) return;
+  delete diacrt;
+}
+
+const char *SherpaOfflineDiacritizationAddDiacritics(
+    const SherpaOnnxOfflineDiacritization *diacrt, const char *text) {
+  if (!diacrt || !text) return nullptr;
+  std::string text_with_diacritics = diacrt->impl->AddDiacritics(text);
+
+  char *ans = new char[text_with_diacritics.size() + 1];
+  std::copy(text_with_diacritics.begin(), text_with_diacritics.end(), ans);
+  ans[text_with_diacritics.size()] = 0;
+
+  return ans;
+}
+
+void SherpaOfflineDiacritizationFreeText(const char *text) {
+  if (!text) return;
+  delete[] text;
+}

@@ -26,6 +26,7 @@
 #include "sherpa-onnx/csrc/online-transducer-modified-beam-search-decoder.h"
 #include "sherpa-onnx/csrc/onnx-utils.h"
 #include "sherpa-onnx/csrc/symbol-table.h"
+#include "sherpa-onnx/csrc/text-utils.h"
 #include "sherpa-onnx/csrc/utils.h"
 #include "ssentencepiece/csrc/ssentencepiece.h"
 
@@ -64,6 +65,8 @@ OnlineRecognizerResult Convert(const OnlineTransducerDecoderResult &src,
   if (sym_table.IsByteBpe()) {
     text = sym_table.DecodeByteBpe(text);
   }
+
+  text = RemoveSpaceBetweenCjk(text);
 
   r.text = std::move(text);
 
@@ -439,7 +442,7 @@ class OnlineRecognizerTransducerImpl : public OnlineRecognizerImpl {
   void InitHotwords() {
     // each line in hotwords_file contains space-separated words
 
-    std::ifstream is(config_.hotwords_file);
+    auto is = OpenInputFile(config_.hotwords_file);
     if (!is) {
       SHERPA_ONNX_LOGE("Open hotwords file failed: %s",
                        config_.hotwords_file.c_str());
