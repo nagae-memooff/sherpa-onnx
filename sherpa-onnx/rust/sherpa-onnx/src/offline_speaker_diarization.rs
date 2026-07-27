@@ -91,6 +91,8 @@ pub struct OfflineSpeakerDiarizationConfig {
     pub clustering: FastClusteringConfig,
     pub min_duration_on: f32,
     pub min_duration_off: f32,
+    pub segmentation_batch_size: i32,
+    pub embedding_num_workers: i32,
 }
 
 impl Default for OfflineSpeakerDiarizationConfig {
@@ -101,6 +103,8 @@ impl Default for OfflineSpeakerDiarizationConfig {
             clustering: Default::default(),
             min_duration_on: 0.3,
             min_duration_off: 0.5,
+            segmentation_batch_size: 1,
+            embedding_num_workers: 1,
         }
     }
 }
@@ -119,6 +123,8 @@ impl OfflineSpeakerDiarizationConfig {
                 .to_sys(),
             min_duration_on: self.min_duration_on,
             min_duration_off: self.min_duration_off,
+            segmentation_batch_size: self.segmentation_batch_size,
+            embedding_num_workers: self.embedding_num_workers,
         }
     }
 }

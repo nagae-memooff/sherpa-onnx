@@ -3173,6 +3173,12 @@ GetOfflineSpeakerDiarizationConfig(
 
   sd_config.min_duration_off = SHERPA_ONNX_OR(config->min_duration_off, 0.5);
 
+  sd_config.segmentation_batch_size =
+      SHERPA_ONNX_OR(config->segmentation_batch_size, 1);
+
+  sd_config.embedding_num_workers =
+      SHERPA_ONNX_OR(config->embedding_num_workers, 1);
+
   if (sd_config.segmentation.debug || sd_config.embedding.debug) {
 #if __OHOS__
     SHERPA_ONNX_LOGE("%{public}s\n", sd_config.ToString().c_str());

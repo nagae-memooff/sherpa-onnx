@@ -29,18 +29,27 @@ struct OfflineSpeakerDiarizationConfig {
   // We do this recursively.
   float min_duration_off = 0.5;  // in seconds
 
+  // Number of fixed-size segmentation windows processed by one model run.
+  int32_t segmentation_batch_size = 1;
+
+  // Number of concurrent embedding jobs. All workers share one ORT session.
+  int32_t embedding_num_workers = 1;
+
   OfflineSpeakerDiarizationConfig() = default;
 
   OfflineSpeakerDiarizationConfig(
       const OfflineSpeakerSegmentationModelConfig &segmentation,
       const SpeakerEmbeddingExtractorConfig &embedding,
       const FastClusteringConfig &clustering, float min_duration_on,
-      float min_duration_off)
+      float min_duration_off, int32_t segmentation_batch_size = 1,
+      int32_t embedding_num_workers = 1)
       : segmentation(segmentation),
         embedding(embedding),
         clustering(clustering),
         min_duration_on(min_duration_on),
-        min_duration_off(min_duration_off) {}
+        min_duration_off(min_duration_off),
+        segmentation_batch_size(segmentation_batch_size),
+        embedding_num_workers(embedding_num_workers) {}
 
   void Register(ParseOptions *po);
   bool Validate() const;

@@ -5,8 +5,16 @@
 #define SHERPA_ONNX_CSRC_OFFLINE_SPEAKER_DIARIZATION_PYANNOTE_IMPL_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <condition_variable>
+#include <cstddef>
+#include <deque>
+#include <exception>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -18,6 +26,7 @@
 #include "sherpa-onnx/csrc/offline-speaker-diarization-impl.h"
 #include "sherpa-onnx/csrc/offline-speaker-segmentation-pyannote-model.h"
 #include "sherpa-onnx/csrc/speaker-embedding-extractor.h"
+#include "sherpa-onnx/csrc/timer.h"
 
 namespace sherpa_onnx {
 
@@ -96,9 +105,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
       const float *audio, int32_t n,
       OfflineSpeakerDiarizationProgressCallback callback = nullptr,
       void *callback_arg = nullptr) const override {
+    Timer total_timer;
+    Timer segmentation_timer;
     bool stopped = false;
     std::vector<Matrix2D> segmentations =
         RunSpeakerSegmentationModel(audio, n, callback, callback_arg, &stopped);
+    LogStageTime("segmentation", segmentation_timer.Elapsed());
     // segmentations[i] is for chunk_i
     // Each matrix is of shape (num_frames, num_powerset_classes)
     if (stopped) {
@@ -140,9 +152,11 @@ class OfflineSpeakerDiarizationPyannoteImpl
     std::vector<int32_t> valid_indexes;
     valid_indexes.reserve(chunk_speaker_samples_list_pair.second.size());
 
+    Timer embedding_timer;
     Matrix2D embeddings =
         ComputeEmbeddings(audio, n, chunk_speaker_samples_list_pair.second,
                           &valid_indexes, callback, callback_arg, &stopped);
+    LogStageTime("embedding", embedding_timer.Elapsed());
 
     if (stopped) {
       return CreateStoppedResult();
@@ -183,8 +197,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
       return CreateStoppedResult();
     }
 
+    Timer clustering_timer;
     std::vector<int32_t> cluster_labels = clustering_->Cluster(
         &embeddings(0, 0), embeddings.rows(), embeddings.cols());
+    LogStageTime("clustering", clustering_timer.Elapsed());
 
     if (ShouldStop(callback, valid_indexes.size(), embeddings.rows(),
                    callback_arg)) {
@@ -230,10 +246,41 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     auto result = ComputeResult(final_labels);
 
+    LogTotalTime(total_timer.Elapsed(), n);
     return result;
   }
 
  private:
+  void LogStageTime(const char *stage, double seconds) const {
+    if (config_.segmentation.debug || config_.embedding.debug) {
+#if __OHOS__
+      SHERPA_ONNX_LOGE("OfflineSpeakerDiarization: %{public}s %{public}.3f s",
+                       stage, seconds);
+#else
+      SHERPA_ONNX_LOGE("OfflineSpeakerDiarization: %s %.3f s", stage, seconds);
+#endif
+    }
+  }
+
+  void LogTotalTime(double seconds, int32_t num_samples) const {
+    if (!(config_.segmentation.debug || config_.embedding.debug) ||
+        num_samples <= 0) {
+      return;
+    }
+
+    double audio_duration = static_cast<double>(num_samples) / SampleRate();
+#if __OHOS__
+    SHERPA_ONNX_LOGE(
+        "OfflineSpeakerDiarization: total %{public}.3f s, audio %{public}.3f s, "
+        "RTF %{public}.3f",
+        seconds, audio_duration, seconds / audio_duration);
+#else
+    SHERPA_ONNX_LOGE(
+        "OfflineSpeakerDiarization: total %.3f s, audio %.3f s, RTF %.3f",
+        seconds, audio_duration, seconds / audio_duration);
+#endif
+  }
+
   void Init() { InitPowersetMapping(); }
 
   static bool ShouldStop(OfflineSpeakerDiarizationProgressCallback callback,
@@ -310,77 +357,99 @@ class OfflineSpeakerDiarizationPyannoteImpl
       return {};
     }
 
-    if (n <= window_size) {
-      std::vector<float> buf(window_size);
-      // NOTE: buf is zero initialized by default
-
-      std::copy(audio, audio + n, buf.data());
-
-      Matrix2D m = ProcessChunk(buf.data());
-
-      ans.push_back(std::move(m));
-
-      if (ShouldStop(callback, 1, 1, callback_arg)) {
-        *stopped = true;
-      }
-
-      return ans;
+    int32_t num_chunks = 1;
+    bool has_last_chunk = false;
+    if (n > window_size) {
+      num_chunks = (n - window_size) / window_shift + 1;
+      has_last_chunk = ((n - window_size) % window_shift) > 0;
     }
-
-    int32_t num_chunks = (n - window_size) / window_shift + 1;
-    bool has_last_chunk = ((n - window_size) % window_shift) > 0;
     int32_t total_chunks = num_chunks + static_cast<int32_t>(has_last_chunk);
 
     ans.reserve(total_chunks);
 
-    const float *p = audio;
-
-    for (int32_t i = 0; i != num_chunks; ++i, p += window_shift) {
-      Matrix2D m = ProcessChunk(p);
-
-      ans.push_back(std::move(m));
-
-      if (ShouldStop(callback, i + 1, total_chunks, callback_arg)) {
-        *stopped = true;
-        return ans;
-      }
+    int32_t batch_size = std::min(config_.segmentation_batch_size, total_chunks);
+    if (config_.segmentation.debug) {
+      int32_t num_batches = (total_chunks + batch_size - 1) / batch_size;
+      SHERPA_ONNX_LOGE(
+          "OfflineSpeakerDiarization: segmentation chunks=%d, batch_size=%d, "
+          "batches=%d",
+          total_chunks, batch_size, num_batches);
     }
 
-    if (has_last_chunk) {
-      std::vector<float> buf(window_size);
-      std::copy(p, audio + n, buf.data());
+    for (int32_t batch_start = 0; batch_start < total_chunks;
+         batch_start += batch_size) {
+      int32_t current_batch =
+          std::min(batch_size, total_chunks - batch_start);
+      size_t batch_num_samples =
+          static_cast<size_t>(current_batch) * window_size;
+      std::vector<float> batch_audio(batch_num_samples);
 
-      Matrix2D m = ProcessChunk(buf.data());
+      for (int32_t i = 0; i != current_batch; ++i) {
+        int32_t chunk_index = batch_start + i;
+        int64_t start = static_cast<int64_t>(chunk_index) * window_shift;
+        int64_t end =
+            std::min<int64_t>(start + window_size, static_cast<int64_t>(n));
+        if (start < n && end > start) {
+          std::copy(audio + start, audio + end,
+                    batch_audio.data() + static_cast<size_t>(i) * window_size);
+        }
+      }
 
-      ans.push_back(std::move(m));
+      std::vector<Matrix2D> batch_results =
+          ProcessChunkBatch(batch_audio.data(), current_batch);
+      if (static_cast<int32_t>(batch_results.size()) != current_batch) {
+        throw std::runtime_error(
+            "Speaker segmentation output batch size does not match input");
+      }
 
-      if (ShouldStop(callback, total_chunks, total_chunks, callback_arg)) {
-        *stopped = true;
+      for (auto &m : batch_results) {
+        ans.push_back(std::move(m));
+        if (ShouldStop(callback, static_cast<int32_t>(ans.size()),
+                       total_chunks, callback_arg)) {
+          *stopped = true;
+          return ans;
+        }
       }
     }
 
     return ans;
   }
 
-  Matrix2D ProcessChunk(const float *p) const {
+  std::vector<Matrix2D> ProcessChunkBatch(const float *p,
+                                          int32_t batch_size) const {
     const auto &meta_data = segmentation_model_.GetModelMetaData();
     int32_t window_size = meta_data.window_size;
 
     auto memory_info =
         Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
 
-    std::array<int64_t, 3> shape = {1, 1, window_size};
+    std::array<int64_t, 3> shape = {batch_size, 1, window_size};
+    size_t num_samples = static_cast<size_t>(batch_size) * window_size;
 
     Ort::Value x =
         Ort::Value::CreateTensor(memory_info, const_cast<float *>(p),
-                                 window_size, shape.data(), shape.size());
+                                 num_samples, shape.data(), shape.size());
 
     Ort::Value out = segmentation_model_.Forward(std::move(x));
     std::vector<int64_t> out_shape = out.GetTensorTypeAndShapeInfo().GetShape();
-    Matrix2D m(out_shape[1], out_shape[2]);
-    std::copy(out.GetTensorData<float>(), out.GetTensorData<float>() + m.size(),
-              &m(0, 0));
-    return m;
+    if (out_shape.size() != 3 || out_shape[0] != batch_size ||
+        out_shape[1] <= 0 || out_shape[2] <= 0) {
+      throw std::runtime_error(
+          "Unexpected speaker segmentation output tensor shape");
+    }
+
+    size_t one_output_size =
+        static_cast<size_t>(out_shape[1]) * out_shape[2];
+    const float *out_data = out.GetTensorData<float>();
+    std::vector<Matrix2D> ans;
+    ans.reserve(batch_size);
+    for (int32_t i = 0; i != batch_size; ++i) {
+      Matrix2D m(out_shape[1], out_shape[2]);
+      const float *begin = out_data + static_cast<size_t>(i) * one_output_size;
+      std::copy(begin, begin + one_output_size, &m(0, 0));
+      ans.push_back(std::move(m));
+    }
+    return ans;
   }
 
   Matrix2DInt32 ToMultiLabel(const Matrix2D &m) const {
@@ -552,28 +621,151 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     auto IsNaNWrapper = [](float f) -> bool { return std::isnan(f); };
 
-    int32_t k = 0;
-    int32_t cur_row_index = 0;
-    for (const auto &v : sample_indexes) {
-      auto stream = embedding_extractor_.CreateStream();
-      for (const auto &p : v) {
-        int32_t end = (p.second <= n) ? p.second : n;
-        int32_t num_samples = end - p.first;
+    if (sample_indexes.empty()) {
+      return ans;
+    }
 
-        if (num_samples > 0) {
-          stream->AcceptWaveform(sample_rate, audio + p.first, num_samples);
+    int32_t num_jobs = static_cast<int32_t>(sample_indexes.size());
+    int32_t effective_workers =
+        std::min(config_.embedding_num_workers, num_jobs);
+    if (config_.embedding.debug) {
+      SHERPA_ONNX_LOGE(
+          "OfflineSpeakerDiarization: embedding jobs=%d, workers=%d", num_jobs,
+          effective_workers);
+    }
+
+    if (config_.embedding_num_workers > 1) {
+      int32_t num_workers = effective_workers;
+      std::vector<std::vector<float>> embeddings(num_jobs);
+      std::atomic<int32_t> next_job{0};
+      std::atomic<int32_t> active_workers{num_workers};
+      std::atomic<bool> cancel{false};
+      std::mutex completion_mutex;
+      std::condition_variable completion_cv;
+      std::deque<int32_t> completed_jobs;
+      std::exception_ptr worker_exception;
+
+      auto worker = [&]() {
+        try {
+          while (!cancel.load(std::memory_order_acquire)) {
+            int32_t job = next_job.fetch_add(1, std::memory_order_relaxed);
+            if (job >= num_jobs) {
+              break;
+            }
+
+            embeddings[job] = ComputeOneEmbedding(
+                audio, n, sample_indexes[job], sample_rate);
+            {
+              std::lock_guard<std::mutex> lock(completion_mutex);
+              completed_jobs.push_back(job);
+            }
+            completion_cv.notify_one();
+          }
+        } catch (...) {
+          {
+            std::lock_guard<std::mutex> lock(completion_mutex);
+            if (!worker_exception) {
+              worker_exception = std::current_exception();
+            }
+          }
+          cancel.store(true, std::memory_order_release);
+        }
+
+        active_workers.fetch_sub(1, std::memory_order_acq_rel);
+        completion_cv.notify_one();
+      };
+
+      std::vector<std::thread> workers;
+      workers.reserve(num_workers);
+      try {
+        for (int32_t i = 0; i != num_workers; ++i) {
+          workers.emplace_back(worker);
+        }
+      } catch (...) {
+        cancel.store(true, std::memory_order_release);
+        for (auto &t : workers) {
+          t.join();
+        }
+        throw;
+      }
+
+      int32_t reported = 0;
+      std::exception_ptr coordinator_exception;
+      try {
+        while (reported < num_jobs) {
+          std::unique_lock<std::mutex> lock(completion_mutex);
+          completion_cv.wait(lock, [&]() {
+            return !completed_jobs.empty() || worker_exception ||
+                   active_workers.load(std::memory_order_acquire) == 0;
+          });
+
+          if (worker_exception) {
+            cancel.store(true, std::memory_order_release);
+            break;
+          }
+
+          while (!completed_jobs.empty()) {
+            completed_jobs.pop_front();
+            ++reported;
+            lock.unlock();
+            if (ShouldStop(callback, reported, num_jobs, callback_arg)) {
+              *stopped = true;
+              cancel.store(true, std::memory_order_release);
+            }
+            lock.lock();
+            if (*stopped) {
+              break;
+            }
+          }
+
+          if (*stopped ||
+              (completed_jobs.empty() &&
+               active_workers.load(std::memory_order_acquire) == 0)) {
+            break;
+          }
+        }
+      } catch (...) {
+        coordinator_exception = std::current_exception();
+        cancel.store(true, std::memory_order_release);
+      }
+
+      for (auto &t : workers) {
+        t.join();
+      }
+
+      if (coordinator_exception) {
+        std::rethrow_exception(coordinator_exception);
+      }
+      if (worker_exception) {
+        std::rethrow_exception(worker_exception);
+      }
+      if (*stopped) {
+        return {};
+      }
+
+      int32_t cur_row_index = 0;
+      for (int32_t i = 0; i != num_jobs; ++i) {
+        const auto &embedding = embeddings[i];
+        if (std::none_of(embedding.begin(), embedding.end(), IsNaNWrapper)) {
+          std::copy(embedding.begin(), embedding.end(),
+                    &ans(cur_row_index, 0));
+          ++cur_row_index;
+          valid_indexes->push_back(i);
         }
       }
 
-      stream->InputFinished();
-      if (!embedding_extractor_.IsReady(stream.get())) {
-        SHERPA_ONNX_LOGE(
-            "This segment is too short, which should not happen since we have "
-            "already filtered short segments");
-        SHERPA_ONNX_EXIT(-1);
+      if (cur_row_index != ans.rows()) {
+        auto seq = Eigen::seqN(0, cur_row_index);
+        ans = ans(seq, Eigen::placeholders::all);
       }
+      return ans;
+    }
 
-      std::vector<float> embedding = embedding_extractor_.Compute(stream.get());
+    int32_t k = 0;
+    int32_t cur_row_index = 0;
+    for (const auto &v : sample_indexes) {
+      std::vector<float> embedding =
+          ComputeOneEmbedding(audio, n, v, sample_rate);
 
       if (std::none_of(embedding.begin(), embedding.end(), IsNaNWrapper)) {
         // a valid embedding
@@ -596,6 +788,28 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
 
     return ans;
+  }
+
+  std::vector<float> ComputeOneEmbedding(
+      const float *audio, int32_t n, const std::vector<Int32Pair> &indexes,
+      int32_t sample_rate) const {
+    auto stream = embedding_extractor_.CreateStream();
+    for (const auto &p : indexes) {
+      int32_t end = (p.second <= n) ? p.second : n;
+      int32_t num_samples = end - p.first;
+
+      if (num_samples > 0) {
+        stream->AcceptWaveform(sample_rate, audio + p.first, num_samples);
+      }
+    }
+
+    stream->InputFinished();
+    if (!embedding_extractor_.IsReady(stream.get())) {
+      throw std::runtime_error(
+          "Speaker embedding segment is unexpectedly too short");
+    }
+
+    return embedding_extractor_.Compute(stream.get());
   }
 
   std::unordered_map<Int32Pair, int32_t, PairHash> ConvertChunkSpeakerToCluster(

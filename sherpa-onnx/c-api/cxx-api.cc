@@ -1470,6 +1470,8 @@ OfflineSpeakerDiarization OfflineSpeakerDiarization::Create(
   c.clustering.threshold = config.clustering.threshold;
   c.min_duration_on = config.min_duration_on;
   c.min_duration_off = config.min_duration_off;
+  c.segmentation_batch_size = config.segmentation_batch_size;
+  c.embedding_num_workers = config.embedding_num_workers;
 
   const SherpaOnnxOfflineSpeakerDiarization *p =
       SherpaOnnxCreateOfflineSpeakerDiarization(&c);

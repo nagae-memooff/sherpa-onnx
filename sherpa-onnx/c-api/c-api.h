@@ -3911,6 +3911,10 @@ typedef struct SherpaOnnxOfflineSpeakerDiarizationConfig {
   float min_duration_on;
   /** Small gaps shorter than this duration in seconds may be merged. */
   float min_duration_off;
+  /** Number of segmentation windows processed by one model run. */
+  int32_t segmentation_batch_size;
+  /** Number of concurrent speaker embedding jobs. */
+  int32_t embedding_num_workers;
 } SherpaOnnxOfflineSpeakerDiarizationConfig;
 
 /** @brief Opaque offline speaker diarization handle. */

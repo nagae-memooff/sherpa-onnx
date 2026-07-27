@@ -1943,6 +1943,10 @@ struct OfflineSpeakerDiarizationConfig {
   float min_duration_on = 0;
   /** Small gaps shorter than this duration in seconds may be merged. */
   float min_duration_off = 0;
+  /** Number of segmentation windows processed by one model run. */
+  int32_t segmentation_batch_size = 1;
+  /** Number of concurrent speaker embedding jobs. */
+  int32_t embedding_num_workers = 1;
 };
 
 /** @brief One diarization segment. */

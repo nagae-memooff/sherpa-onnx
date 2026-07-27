@@ -34,6 +34,8 @@ pub struct OfflineSpeakerDiarizationConfig {
     pub clustering: FastClusteringConfig,
     pub min_duration_on: c_float,
     pub min_duration_off: c_float,
+    pub segmentation_batch_size: i32,
+    pub embedding_num_workers: i32,
 }
 
 #[repr(C)]

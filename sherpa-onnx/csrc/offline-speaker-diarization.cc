@@ -38,6 +38,12 @@ void OfflineSpeakerDiarizationConfig::Register(ParseOptions *po) {
                "if the gap between to segments of the same speaker is less "
                "than this value, then these two segments are merged into a "
                "single segment. We do it recursively.");
+
+  po->Register("segmentation-batch-size", &segmentation_batch_size,
+               "Number of segmentation windows processed by one model run.");
+
+  po->Register("embedding-num-workers", &embedding_num_workers,
+               "Number of concurrent speaker embedding jobs.");
 }
 
 bool OfflineSpeakerDiarizationConfig::Validate() const {
@@ -63,6 +69,18 @@ bool OfflineSpeakerDiarizationConfig::Validate() const {
     return false;
   }
 
+  if (segmentation_batch_size < 1) {
+    SHERPA_ONNX_LOGE("segmentation_batch_size should be > 0. Given %d",
+                     segmentation_batch_size);
+    return false;
+  }
+
+  if (embedding_num_workers < 1) {
+    SHERPA_ONNX_LOGE("embedding_num_workers should be > 0. Given %d",
+                     embedding_num_workers);
+    return false;
+  }
+
   return true;
 }
 
@@ -74,7 +92,9 @@ std::string OfflineSpeakerDiarizationConfig::ToString() const {
   os << "embedding=" << embedding.ToString() << ", ";
   os << "clustering=" << clustering.ToString() << ", ";
   os << "min_duration_on=" << min_duration_on << ", ";
-  os << "min_duration_off=" << min_duration_off << ")";
+  os << "min_duration_off=" << min_duration_off << ", ";
+  os << "segmentation_batch_size=" << segmentation_batch_size << ", ";
+  os << "embedding_num_workers=" << embedding_num_workers << ")";
 
   return os.str();
 }

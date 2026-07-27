@@ -691,6 +691,8 @@ type
     Clustering: TSherpaOnnxFastClusteringConfig;
     MinDurationOn: Single;
     MinDurationOff: Single;
+    SegmentationBatchSize: Integer;
+    EmbeddingNumWorkers: Integer;
     function ToString: AnsiString;
     class operator Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineSpeakerDiarizationConfig);
   end;
@@ -1286,6 +1288,8 @@ type
     Clustering: SherpaOnnxFastClusteringConfig;
     MinDurationOn: cfloat;
     MinDurationOff: cfloat;
+    SegmentationBatchSize: cint32;
+    EmbeddingNumWorkers: cint32;
   end;
 
   SherpaOnnxOfflineSpeakerDiarizationSegment = record
@@ -3274,15 +3278,20 @@ begin
     'Embedding := %s, '+
     'Clustering := %s, '+
     'MinDurationOn := %.3f, '+
-    'MinDurationOff := %.3f)',
+    'MinDurationOff := %.3f, '+
+    'SegmentationBatchSize := %d, '+
+    'EmbeddingNumWorkers := %d)',
     [Self.Segmentation.ToString, Self.Embedding.ToString,
-     Self.Clustering.ToString, Self.MinDurationOn, Self.MinDurationOff]);
+     Self.Clustering.ToString, Self.MinDurationOn, Self.MinDurationOff,
+     Self.SegmentationBatchSize, Self.EmbeddingNumWorkers]);
 end;
 
 class operator TSherpaOnnxOfflineSpeakerDiarizationConfig.Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxOfflineSpeakerDiarizationConfig);
 begin
   Dest.MinDurationOn := 0.2;
   Dest.MinDurationOff := 0.5;
+  Dest.SegmentationBatchSize := 1;
+  Dest.EmbeddingNumWorkers := 1;
 end;
 
 function TSherpaOnnxOfflineSpeakerDiarizationSegment.ToString: AnsiString;
@@ -3314,6 +3323,8 @@ begin
 
   C.MinDurationOn := Config.MinDurationOn;
   C.MinDurationOff := Config.MinDurationOff;
+  C.SegmentationBatchSize := Config.SegmentationBatchSize;
+  C.EmbeddingNumWorkers := Config.EmbeddingNumWorkers;
 
   Self.Handle := SherpaOnnxCreateOfflineSpeakerDiarization(@C);
   Self._Config := Config;
