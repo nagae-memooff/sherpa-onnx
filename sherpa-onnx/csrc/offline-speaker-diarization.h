@@ -35,6 +35,10 @@ struct OfflineSpeakerDiarizationConfig {
   // Number of concurrent embedding jobs. All workers share one ORT session.
   int32_t embedding_num_workers = 1;
 
+  // Release segmentation and embedding model resources as soon as each stage
+  // finishes. A diarizer with this option enabled can be processed only once.
+  bool release_model_resources_after_use = false;
+
   OfflineSpeakerDiarizationConfig() = default;
 
   OfflineSpeakerDiarizationConfig(
@@ -42,14 +46,17 @@ struct OfflineSpeakerDiarizationConfig {
       const SpeakerEmbeddingExtractorConfig &embedding,
       const FastClusteringConfig &clustering, float min_duration_on,
       float min_duration_off, int32_t segmentation_batch_size = 1,
-      int32_t embedding_num_workers = 1)
+      int32_t embedding_num_workers = 1,
+      bool release_model_resources_after_use = false)
       : segmentation(segmentation),
         embedding(embedding),
         clustering(clustering),
         min_duration_on(min_duration_on),
         min_duration_off(min_duration_off),
         segmentation_batch_size(segmentation_batch_size),
-        embedding_num_workers(embedding_num_workers) {}
+        embedding_num_workers(embedding_num_workers),
+        release_model_resources_after_use(
+            release_model_resources_after_use) {}
 
   void Register(ParseOptions *po);
   bool Validate() const;

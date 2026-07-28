@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <deque>
 #include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -49,6 +50,27 @@ struct PairHash {
     return result;
   }
 };
+
+class StageResourceGuard {
+ public:
+  explicit StageResourceGuard(std::function<void()> release)
+      : release_(std::move(release)) {}
+
+  StageResourceGuard(const StageResourceGuard &) = delete;
+  StageResourceGuard &operator=(const StageResourceGuard &) = delete;
+
+  ~StageResourceGuard() { ReleaseNow(); }
+
+  void ReleaseNow() {
+    if (release_) {
+      auto release = std::move(release_);
+      release();
+    }
+  }
+
+ private:
+  std::function<void()> release_;
+};
 }  // namespace
 
 using Matrix2D = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic,
@@ -70,8 +92,17 @@ class OfflineSpeakerDiarizationPyannoteImpl
   explicit OfflineSpeakerDiarizationPyannoteImpl(
       const OfflineSpeakerDiarizationConfig &config)
       : config_(config),
-        segmentation_model_(config_.segmentation),
-        embedding_extractor_(config_.embedding),
+        segmentation_model_(
+            std::make_unique<OfflineSpeakerSegmentationPyannoteModel>(
+                config_.segmentation)),
+        segmentation_meta_data_(segmentation_model_->GetModelMetaData()),
+        embedding_factory_([embedding_config = config_.embedding]() {
+          return std::make_unique<SpeakerEmbeddingExtractor>(embedding_config);
+        }),
+        embedding_extractor_(
+            config_.release_model_resources_after_use
+                ? nullptr
+                : embedding_factory_()),
         clustering_(std::make_unique<FastClustering>(config_.clustering)) {
     Init();
   }
@@ -80,16 +111,19 @@ class OfflineSpeakerDiarizationPyannoteImpl
   OfflineSpeakerDiarizationPyannoteImpl(
       Manager *mgr, const OfflineSpeakerDiarizationConfig &config)
       : config_(config),
-        segmentation_model_(mgr, config_.segmentation),
-        embedding_extractor_(mgr, config_.embedding),
+        segmentation_model_(
+            std::make_unique<OfflineSpeakerSegmentationPyannoteModel>(
+                mgr, config_.segmentation)),
+        segmentation_meta_data_(segmentation_model_->GetModelMetaData()),
+        embedding_extractor_(
+            std::make_unique<SpeakerEmbeddingExtractor>(mgr,
+                                                        config_.embedding)),
         clustering_(std::make_unique<FastClustering>(config_.clustering)) {
     Init();
   }
 
   int32_t SampleRate() const override {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
-
-    return meta_data.sample_rate;
+    return segmentation_meta_data_.sample_rate;
   }
 
   void SetConfig(const OfflineSpeakerDiarizationConfig &config) override {
@@ -105,11 +139,21 @@ class OfflineSpeakerDiarizationPyannoteImpl
       const float *audio, int32_t n,
       OfflineSpeakerDiarizationProgressCallback callback = nullptr,
       void *callback_arg = nullptr) const override {
+    if (config_.release_model_resources_after_use &&
+        process_started_.exchange(true, std::memory_order_acq_rel)) {
+      throw std::runtime_error(
+          "OfflineSpeakerDiarization with "
+          "release_model_resources_after_use=true can be processed only once");
+    }
+
     Timer total_timer;
     Timer segmentation_timer;
     bool stopped = false;
+    StageResourceGuard segmentation_guard(
+        [this]() { ReleaseSegmentationModel(); });
     std::vector<Matrix2D> segmentations =
         RunSpeakerSegmentationModel(audio, n, callback, callback_arg, &stopped);
+    segmentation_guard.ReleaseNow();
     LogStageTime("segmentation", segmentation_timer.Elapsed());
     // segmentations[i] is for chunk_i
     // Each matrix is of shape (num_frames, num_powerset_classes)
@@ -146,16 +190,25 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     auto chunk_speaker_samples_list_pair = GetChunkSpeakerSampleIndexes(labels);
 
+    if (chunk_speaker_samples_list_pair.second.empty()) {
+      SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
+      return {};
+    }
+
     // The embedding model may output NaN. valid_indexes contains indexes
     // in chunk_speaker_samples_list_pair.second that don't lead to
     // NaN embeddings.
     std::vector<int32_t> valid_indexes;
     valid_indexes.reserve(chunk_speaker_samples_list_pair.second.size());
 
+    EnsureEmbeddingExtractor();
+    StageResourceGuard embedding_guard(
+        [this]() { ReleaseEmbeddingExtractor(); });
     Timer embedding_timer;
     Matrix2D embeddings =
         ComputeEmbeddings(audio, n, chunk_speaker_samples_list_pair.second,
                           &valid_indexes, callback, callback_arg, &stopped);
+    embedding_guard.ReleaseNow();
     LogStageTime("embedding", embedding_timer.Elapsed());
 
     if (stopped) {
@@ -164,10 +217,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     if (valid_indexes.size() != chunk_speaker_samples_list_pair.second.size()) {
       std::vector<Int32Pair> chunk_speaker_pair;
-      std::vector<std::vector<Int32Pair>> sample_indexes;
 
       chunk_speaker_pair.reserve(valid_indexes.size());
-      sample_indexes.reserve(valid_indexes.size());
       for (auto i : valid_indexes) {
         if (i < 0 ||
             i >= static_cast<int32_t>(
@@ -179,13 +230,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
           continue;
         }
         chunk_speaker_pair.push_back(chunk_speaker_samples_list_pair.first[i]);
-        sample_indexes.push_back(
-            std::move(chunk_speaker_samples_list_pair.second[i]));
       }
 
       chunk_speaker_samples_list_pair.first = std::move(chunk_speaker_pair);
-      chunk_speaker_samples_list_pair.second = std::move(sample_indexes);
     }
+    std::vector<std::vector<Int32Pair>>().swap(
+        chunk_speaker_samples_list_pair.second);
 
     if (embeddings.rows() == 0) {
       SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
@@ -206,6 +256,8 @@ class OfflineSpeakerDiarizationPyannoteImpl
                    callback_arg)) {
       return CreateStoppedResult();
     }
+    embeddings.resize(0, 0);
+    std::vector<int32_t>().swap(valid_indexes);
 
     if (cluster_labels.empty()) {
       SHERPA_ONNX_LOGE("No speakers found in the audio samples");
@@ -281,6 +333,38 @@ class OfflineSpeakerDiarizationPyannoteImpl
 #endif
   }
 
+  void EnsureEmbeddingExtractor() const {
+    if (!embedding_extractor_ && embedding_factory_) {
+      embedding_extractor_ = embedding_factory_();
+    }
+    if (!embedding_extractor_) {
+      throw std::runtime_error(
+          "Failed to initialize speaker embedding extractor");
+    }
+  }
+
+  void ReleaseSegmentationModel() const {
+    if (!config_.release_model_resources_after_use || !segmentation_model_) {
+      return;
+    }
+    segmentation_model_.reset();
+    if (config_.segmentation.debug || config_.embedding.debug) {
+      SHERPA_ONNX_LOGE(
+          "OfflineSpeakerDiarization: released segmentation model resources");
+    }
+  }
+
+  void ReleaseEmbeddingExtractor() const {
+    if (!config_.release_model_resources_after_use || !embedding_extractor_) {
+      return;
+    }
+    embedding_extractor_.reset();
+    if (config_.segmentation.debug || config_.embedding.debug) {
+      SHERPA_ONNX_LOGE(
+          "OfflineSpeakerDiarization: released embedding model resources");
+    }
+  }
+
   void Init() { InitPowersetMapping(); }
 
   static bool ShouldStop(OfflineSpeakerDiarizationProgressCallback callback,
@@ -298,7 +382,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
   // see also
   // https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/utils/powerset.py#L68
   void InitPowersetMapping() {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t num_classes = meta_data.num_classes;
     int32_t powerset_max_classes = meta_data.powerset_max_classes;
     int32_t num_speakers = meta_data.num_speakers;
@@ -338,7 +422,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
       bool *stopped) const {
     std::vector<Matrix2D> ans;
 
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
     int32_t window_shift = meta_data.window_shift;
 
@@ -417,7 +501,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
   std::vector<Matrix2D> ProcessChunkBatch(const float *p,
                                           int32_t batch_size) const {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
 
     auto memory_info =
@@ -430,7 +514,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
         Ort::Value::CreateTensor(memory_info, const_cast<float *>(p),
                                  num_samples, shape.data(), shape.size());
 
-    Ort::Value out = segmentation_model_.Forward(std::move(x));
+    Ort::Value out = segmentation_model_->Forward(std::move(x));
     std::vector<int64_t> out_shape = out.GetTensorTypeAndShapeInfo().GetShape();
     if (out_shape.size() != 3 || out_shape[0] != batch_size ||
         out_shape[1] <= 0 || out_shape[2] <= 0) {
@@ -470,7 +554,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
   // https://github.com/pyannote/pyannote-audio/blob/develop/pyannote/audio/pipelines/utils/diarization.py#L122
   Int32RowVector ComputeSpeakersPerFrame(
       const std::vector<Matrix2DInt32> &labels) const {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
     int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
@@ -511,7 +595,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     std::vector<Int32Pair> chunk_speaker_list;
     std::vector<std::vector<Int32Pair>> samples_index_list;
 
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
     int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
@@ -615,9 +699,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
       std::vector<int32_t> *valid_indexes,
       OfflineSpeakerDiarizationProgressCallback callback,
       void *callback_arg, bool *stopped) const {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t sample_rate = meta_data.sample_rate;
-    Matrix2D ans(sample_indexes.size(), embedding_extractor_.Dim());
+    Matrix2D ans(sample_indexes.size(), embedding_extractor_->Dim());
 
     auto IsNaNWrapper = [](float f) -> bool { return std::isnan(f); };
 
@@ -793,7 +877,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
   std::vector<float> ComputeOneEmbedding(
       const float *audio, int32_t n, const std::vector<Int32Pair> &indexes,
       int32_t sample_rate) const {
-    auto stream = embedding_extractor_.CreateStream();
+    auto stream = embedding_extractor_->CreateStream();
     for (const auto &p : indexes) {
       int32_t end = (p.second <= n) ? p.second : n;
       int32_t num_samples = end - p.first;
@@ -804,12 +888,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
 
     stream->InputFinished();
-    if (!embedding_extractor_.IsReady(stream.get())) {
+    if (!embedding_extractor_->IsReady(stream.get())) {
       throw std::runtime_error(
           "Speaker embedding segment is unexpectedly too short");
     }
 
-    return embedding_extractor_.Compute(stream.get());
+    return embedding_extractor_->Compute(stream.get());
   }
 
   std::unordered_map<Int32Pair, int32_t, PairHash> ConvertChunkSpeakerToCluster(
@@ -881,7 +965,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
   Matrix2DInt32 ComputeSpeakerCount(const std::vector<Matrix2DInt32> &labels,
                                     int32_t num_samples) const {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
     int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
@@ -948,7 +1032,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     int32_t num_speakers = final_labels_t.rows();
     int32_t num_frames = final_labels_t.cols();
 
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
     int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
@@ -1009,7 +1093,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
   OfflineSpeakerDiarizationResult HandleOneChunkSpecialCase(
       const Matrix2DInt32 &final_labels, int32_t num_samples) const {
-    const auto &meta_data = segmentation_model_.GetModelMetaData();
+    const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
     int32_t window_shift = meta_data.window_shift;
     int32_t receptive_field_shift = meta_data.receptive_field_shift;
@@ -1050,10 +1134,15 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
  private:
   OfflineSpeakerDiarizationConfig config_;
-  OfflineSpeakerSegmentationPyannoteModel segmentation_model_;
-  SpeakerEmbeddingExtractor embedding_extractor_;
+  mutable std::unique_ptr<OfflineSpeakerSegmentationPyannoteModel>
+      segmentation_model_;
+  OfflineSpeakerSegmentationPyannoteModelMetaData segmentation_meta_data_;
+  std::function<std::unique_ptr<SpeakerEmbeddingExtractor>()>
+      embedding_factory_;
+  mutable std::unique_ptr<SpeakerEmbeddingExtractor> embedding_extractor_;
   std::unique_ptr<FastClustering> clustering_;
   Matrix2DInt32 powerset_mapping_;
+  mutable std::atomic<bool> process_started_{false};
 };
 
 }  // namespace sherpa_onnx

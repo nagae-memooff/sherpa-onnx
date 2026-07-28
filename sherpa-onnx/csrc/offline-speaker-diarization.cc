@@ -44,6 +44,12 @@ void OfflineSpeakerDiarizationConfig::Register(ParseOptions *po) {
 
   po->Register("embedding-num-workers", &embedding_num_workers,
                "Number of concurrent speaker embedding jobs.");
+
+  po->Register(
+      "release-model-resources-after-use",
+      &release_model_resources_after_use,
+      "Release segmentation and embedding model resources after each stage. "
+      "The diarizer can be processed only once when enabled.");
 }
 
 bool OfflineSpeakerDiarizationConfig::Validate() const {
@@ -94,7 +100,9 @@ std::string OfflineSpeakerDiarizationConfig::ToString() const {
   os << "min_duration_on=" << min_duration_on << ", ";
   os << "min_duration_off=" << min_duration_off << ", ";
   os << "segmentation_batch_size=" << segmentation_batch_size << ", ";
-  os << "embedding_num_workers=" << embedding_num_workers << ")";
+  os << "embedding_num_workers=" << embedding_num_workers << ", ";
+  os << "release_model_resources_after_use="
+     << (release_model_resources_after_use ? "True" : "False") << ")";
 
   return os.str();
 }

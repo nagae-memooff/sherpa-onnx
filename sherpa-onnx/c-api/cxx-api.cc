@@ -1472,6 +1472,8 @@ OfflineSpeakerDiarization OfflineSpeakerDiarization::Create(
   c.min_duration_off = config.min_duration_off;
   c.segmentation_batch_size = config.segmentation_batch_size;
   c.embedding_num_workers = config.embedding_num_workers;
+  c.release_model_resources_after_use =
+      config.release_model_resources_after_use;
 
   const SherpaOnnxOfflineSpeakerDiarization *p =
       SherpaOnnxCreateOfflineSpeakerDiarization(&c);

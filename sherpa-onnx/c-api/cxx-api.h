@@ -1947,6 +1947,11 @@ struct OfflineSpeakerDiarizationConfig {
   int32_t segmentation_batch_size = 1;
   /** Number of concurrent speaker embedding jobs. */
   int32_t embedding_num_workers = 1;
+  /**
+   * Release segmentation and embedding model resources after each stage.
+   * The diarizer can be processed only once when enabled.
+   */
+  bool release_model_resources_after_use = false;
 };
 
 /** @brief One diarization segment. */

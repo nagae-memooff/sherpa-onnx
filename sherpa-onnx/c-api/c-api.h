@@ -3915,6 +3915,11 @@ typedef struct SherpaOnnxOfflineSpeakerDiarizationConfig {
   int32_t segmentation_batch_size;
   /** Number of concurrent speaker embedding jobs. */
   int32_t embedding_num_workers;
+  /**
+   * Release segmentation and embedding model resources immediately after each
+   * stage. When non-zero, the diarizer can be processed only once.
+   */
+  int32_t release_model_resources_after_use;
 } SherpaOnnxOfflineSpeakerDiarizationConfig;
 
 /** @brief Opaque offline speaker diarization handle. */
