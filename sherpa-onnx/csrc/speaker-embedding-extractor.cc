@@ -87,6 +87,12 @@ std::vector<float> SpeakerEmbeddingExtractor::Compute(OnlineStream *s) const {
   return impl_->Compute(s);
 }
 
+std::vector<float> SpeakerEmbeddingExtractor::ComputeWithProfiling(
+    OnlineStream *s,
+    SpeakerEmbeddingExtractorProfilingInfo *profiling) const {
+  return impl_->ComputeWithProfiling(s, profiling);
+}
+
 #if __ANDROID_API__ >= 9
 template SpeakerEmbeddingExtractor::SpeakerEmbeddingExtractor(
     AAssetManager *mgr, const SpeakerEmbeddingExtractorConfig &config);

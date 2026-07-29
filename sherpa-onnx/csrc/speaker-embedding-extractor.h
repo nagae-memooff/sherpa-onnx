@@ -33,6 +33,16 @@ struct SpeakerEmbeddingExtractorConfig {
   std::string ToString() const;
 };
 
+struct SpeakerEmbeddingExtractorProfilingInfo {
+  int32_t num_frames = 0;
+  int32_t feature_dim = 0;
+  double get_frames_seconds = 0;
+  double normalize_seconds = 0;
+  double prepare_tensor_seconds = 0;
+  double inference_seconds = 0;
+  double output_copy_seconds = 0;
+};
+
 class SpeakerEmbeddingExtractorImpl;
 
 class SpeakerEmbeddingExtractor {
@@ -61,6 +71,9 @@ class SpeakerEmbeddingExtractor {
   //
   // You have to ensure IsReady(s) returns true before you call this method.
   std::vector<float> Compute(OnlineStream *s) const;
+
+  std::vector<float> ComputeWithProfiling(
+      OnlineStream *s, SpeakerEmbeddingExtractorProfilingInfo *profiling) const;
 
  private:
   std::unique_ptr<SpeakerEmbeddingExtractorImpl> impl_;

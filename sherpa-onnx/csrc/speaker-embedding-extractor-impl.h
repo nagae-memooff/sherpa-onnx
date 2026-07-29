@@ -31,6 +31,10 @@ class SpeakerEmbeddingExtractorImpl {
   virtual bool IsReady(OnlineStream *s) const = 0;
 
   virtual std::vector<float> Compute(OnlineStream *s) const = 0;
+
+  virtual std::vector<float> ComputeWithProfiling(
+      OnlineStream *s,
+      SpeakerEmbeddingExtractorProfilingInfo *profiling) const = 0;
 };
 
 }  // namespace sherpa_onnx

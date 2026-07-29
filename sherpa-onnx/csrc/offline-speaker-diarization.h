@@ -39,6 +39,9 @@ struct OfflineSpeakerDiarizationConfig {
   // finishes. A diarizer with this option enabled can be processed only once.
   bool release_model_resources_after_use = false;
 
+  // Print detailed segmentation and embedding timing statistics.
+  bool enable_profiling = false;
+
   OfflineSpeakerDiarizationConfig() = default;
 
   OfflineSpeakerDiarizationConfig(
@@ -47,7 +50,8 @@ struct OfflineSpeakerDiarizationConfig {
       const FastClusteringConfig &clustering, float min_duration_on,
       float min_duration_off, int32_t segmentation_batch_size = 1,
       int32_t embedding_num_workers = 1,
-      bool release_model_resources_after_use = false)
+      bool release_model_resources_after_use = false,
+      bool enable_profiling = false)
       : segmentation(segmentation),
         embedding(embedding),
         clustering(clustering),
@@ -56,7 +60,8 @@ struct OfflineSpeakerDiarizationConfig {
         segmentation_batch_size(segmentation_batch_size),
         embedding_num_workers(embedding_num_workers),
         release_model_resources_after_use(
-            release_model_resources_after_use) {}
+            release_model_resources_after_use),
+        enable_profiling(enable_profiling) {}
 
   void Register(ParseOptions *po);
   bool Validate() const;

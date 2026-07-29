@@ -6,14 +6,17 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <exception>
 #include <functional>
+#include <iomanip>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
@@ -70,6 +73,42 @@ class StageResourceGuard {
 
  private:
   std::function<void()> release_;
+};
+
+struct SegmentationProfilingInfo {
+  int32_t chunks = 0;
+  int32_t batches = 0;
+  int64_t prepared_samples = 0;
+  double prepare_seconds = 0;
+  double tensor_seconds = 0;
+  double inference_seconds = 0;
+  double output_copy_seconds = 0;
+  double release_seconds = 0;
+};
+
+struct EmbeddingJobProfilingInfo {
+  int64_t accepted_samples = 0;
+  int32_t sample_ranges = 0;
+  double create_stream_seconds = 0;
+  double accept_waveform_seconds = 0;
+  double input_finished_seconds = 0;
+  double ready_check_seconds = 0;
+  double total_seconds = 0;
+  SpeakerEmbeddingExtractorProfilingInfo extractor;
+};
+
+struct EmbeddingProfilingInfo {
+  int32_t jobs = 0;
+  int32_t workers = 0;
+  double model_init_seconds = 0;
+  double result_copy_seconds = 0;
+  double release_seconds = 0;
+  std::vector<EmbeddingJobProfilingInfo> job_profiles;
+};
+
+struct DiarizationProfilingInfo {
+  SegmentationProfilingInfo segmentation;
+  EmbeddingProfilingInfo embedding;
 };
 }  // namespace
 
@@ -149,12 +188,36 @@ class OfflineSpeakerDiarizationPyannoteImpl
     Timer total_timer;
     Timer segmentation_timer;
     bool stopped = false;
+    std::unique_ptr<DiarizationProfilingInfo> profiling;
+    if (config_.enable_profiling) {
+      profiling = std::make_unique<DiarizationProfilingInfo>();
+    }
     StageResourceGuard segmentation_guard(
         [this]() { ReleaseSegmentationModel(); });
-    std::vector<Matrix2D> segmentations =
-        RunSpeakerSegmentationModel(audio, n, callback, callback_arg, &stopped);
-    segmentation_guard.ReleaseNow();
-    LogStageTime("segmentation", segmentation_timer.Elapsed());
+    std::vector<Matrix2D> segmentations;
+    if (profiling) {
+      segmentations = RunSpeakerSegmentationModel<true>(
+          audio, n, callback, callback_arg, &stopped,
+          &profiling->segmentation);
+    } else {
+      segmentations = RunSpeakerSegmentationModel<false>(
+          audio, n, callback, callback_arg, &stopped, nullptr);
+    }
+    if (profiling) {
+      auto start = std::chrono::steady_clock::now();
+      segmentation_guard.ReleaseNow();
+      profiling->segmentation.release_seconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                        start)
+              .count();
+    } else {
+      segmentation_guard.ReleaseNow();
+    }
+    double segmentation_seconds = segmentation_timer.Elapsed();
+    LogStageTime("segmentation", segmentation_seconds);
+    if (profiling) {
+      LogSegmentationProfile(profiling->segmentation, segmentation_seconds, n);
+    }
     // segmentations[i] is for chunk_i
     // Each matrix is of shape (num_frames, num_powerset_classes)
     if (stopped) {
@@ -201,15 +264,42 @@ class OfflineSpeakerDiarizationPyannoteImpl
     std::vector<int32_t> valid_indexes;
     valid_indexes.reserve(chunk_speaker_samples_list_pair.second.size());
 
-    EnsureEmbeddingExtractor();
+    if (profiling) {
+      RunProfiled<true>(&profiling->embedding.model_init_seconds, [&]() {
+        EnsureEmbeddingExtractor();
+        return 0;
+      });
+    } else {
+      EnsureEmbeddingExtractor();
+    }
     StageResourceGuard embedding_guard(
         [this]() { ReleaseEmbeddingExtractor(); });
     Timer embedding_timer;
-    Matrix2D embeddings =
-        ComputeEmbeddings(audio, n, chunk_speaker_samples_list_pair.second,
-                          &valid_indexes, callback, callback_arg, &stopped);
-    embedding_guard.ReleaseNow();
-    LogStageTime("embedding", embedding_timer.Elapsed());
+    Matrix2D embeddings;
+    if (profiling) {
+      embeddings = ComputeEmbeddings<true>(
+          audio, n, chunk_speaker_samples_list_pair.second, &valid_indexes,
+          callback, callback_arg, &stopped, &profiling->embedding);
+    } else {
+      embeddings = ComputeEmbeddings<false>(
+          audio, n, chunk_speaker_samples_list_pair.second, &valid_indexes,
+          callback, callback_arg, &stopped, nullptr);
+    }
+    if (profiling) {
+      auto start = std::chrono::steady_clock::now();
+      embedding_guard.ReleaseNow();
+      profiling->embedding.release_seconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                        start)
+              .count();
+    } else {
+      embedding_guard.ReleaseNow();
+    }
+    double embedding_seconds = embedding_timer.Elapsed();
+    LogStageTime("embedding", embedding_seconds);
+    if (profiling) {
+      LogEmbeddingProfile(profiling->embedding, embedding_seconds, n);
+    }
 
     if (stopped) {
       return CreateStoppedResult();
@@ -303,6 +393,130 @@ class OfflineSpeakerDiarizationPyannoteImpl
   }
 
  private:
+  template <bool EnableProfiling, typename Func>
+  static auto RunProfiled(double *seconds, Func &&func) -> decltype(func()) {
+    if constexpr (EnableProfiling) {
+      auto start = std::chrono::steady_clock::now();
+      auto ans = func();
+      *seconds += std::chrono::duration<double>(
+                      std::chrono::steady_clock::now() - start)
+                      .count();
+      return ans;
+    } else {
+      return func();
+    }
+  }
+
+  static double Percentile(std::vector<double> values, double percentile) {
+    if (values.empty()) {
+      return 0;
+    }
+    std::sort(values.begin(), values.end());
+    size_t index = static_cast<size_t>(
+        std::ceil(percentile * static_cast<double>(values.size())) - 1);
+    return values[std::min(index, values.size() - 1)];
+  }
+
+  static void LogProfileLine(const std::string &line) {
+#if __OHOS__
+    SHERPA_ONNX_LOGE("%{public}s", line.c_str());
+#else
+    SHERPA_ONNX_LOGE("%s", line.c_str());
+#endif
+  }
+
+  void LogSegmentationProfile(const SegmentationProfilingInfo &profiling,
+                              double wall_seconds,
+                              int32_t source_samples) const {
+    double reuse =
+        source_samples > 0
+            ? static_cast<double>(profiling.prepared_samples) / source_samples
+            : 0;
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(3)
+       << "[sherpa][profile] segmentation"
+       << " wall_s=" << wall_seconds << " chunks=" << profiling.chunks
+       << " batches=" << profiling.batches
+       << " batch_size=" << config_.segmentation_batch_size
+       << " source_samples=" << source_samples
+       << " prepared_samples=" << profiling.prepared_samples
+       << " sample_reuse=" << reuse
+       << " prepare_s=" << profiling.prepare_seconds
+       << " tensor_s=" << profiling.tensor_seconds
+       << " ort_run_s=" << profiling.inference_seconds
+       << " output_copy_s=" << profiling.output_copy_seconds
+       << " release_s=" << profiling.release_seconds;
+    LogProfileLine(os.str());
+  }
+
+  void LogEmbeddingProfile(const EmbeddingProfilingInfo &profiling,
+                           double wall_seconds,
+                           int32_t source_samples) const {
+    int64_t accepted_samples = 0;
+    int64_t feature_frames = 0;
+    int64_t sample_ranges = 0;
+    double create_stream_seconds = 0;
+    double accept_waveform_seconds = 0;
+    double input_finished_seconds = 0;
+    double ready_check_seconds = 0;
+    double get_frames_seconds = 0;
+    double normalize_seconds = 0;
+    double prepare_tensor_seconds = 0;
+    double inference_seconds = 0;
+    double output_copy_seconds = 0;
+    double worker_seconds = 0;
+    std::vector<double> job_seconds;
+    job_seconds.reserve(profiling.job_profiles.size());
+
+    for (const auto &p : profiling.job_profiles) {
+      accepted_samples += p.accepted_samples;
+      sample_ranges += p.sample_ranges;
+      feature_frames += p.extractor.num_frames;
+      create_stream_seconds += p.create_stream_seconds;
+      accept_waveform_seconds += p.accept_waveform_seconds;
+      input_finished_seconds += p.input_finished_seconds;
+      ready_check_seconds += p.ready_check_seconds;
+      get_frames_seconds += p.extractor.get_frames_seconds;
+      normalize_seconds += p.extractor.normalize_seconds;
+      prepare_tensor_seconds += p.extractor.prepare_tensor_seconds;
+      inference_seconds += p.extractor.inference_seconds;
+      output_copy_seconds += p.extractor.output_copy_seconds;
+      worker_seconds += p.total_seconds;
+      job_seconds.push_back(p.total_seconds);
+    }
+
+    double reuse =
+        source_samples > 0
+            ? static_cast<double>(accepted_samples) / source_samples
+            : 0;
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(3)
+       << "[sherpa][profile] embedding"
+       << " wall_s=" << wall_seconds << " jobs=" << profiling.jobs
+       << " workers=" << profiling.workers
+       << " model_init_s=" << profiling.model_init_seconds
+       << " source_samples=" << source_samples
+       << " accepted_samples=" << accepted_samples
+       << " sample_reuse=" << reuse << " sample_ranges=" << sample_ranges
+       << " feature_frames=" << feature_frames
+       << " worker_sum_s=" << worker_seconds
+       << " job_p50_ms=" << Percentile(job_seconds, 0.50) * 1000
+       << " job_p95_ms=" << Percentile(job_seconds, 0.95) * 1000
+       << " job_max_ms=" << Percentile(job_seconds, 1.0) * 1000
+       << " create_stream_s=" << create_stream_seconds
+       << " accept_waveform_s=" << accept_waveform_seconds
+       << " input_finished_s=" << input_finished_seconds
+       << " ready_check_s=" << ready_check_seconds
+       << " get_frames_s=" << get_frames_seconds
+       << " normalize_s=" << normalize_seconds
+       << " tensor_s=" << prepare_tensor_seconds
+       << " ort_run_s=" << inference_seconds
+       << " model_output_copy_s=" << output_copy_seconds
+       << " result_copy_s=" << profiling.result_copy_seconds
+       << " release_s=" << profiling.release_seconds;
+    LogProfileLine(os.str());
+  }
+
   void LogStageTime(const char *stage, double seconds) const {
     if (config_.segmentation.debug || config_.embedding.debug) {
 #if __OHOS__
@@ -416,10 +630,11 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
   }
 
+  template <bool EnableProfiling>
   std::vector<Matrix2D> RunSpeakerSegmentationModel(
       const float *audio, int32_t n,
       OfflineSpeakerDiarizationProgressCallback callback, void *callback_arg,
-      bool *stopped) const {
+      bool *stopped, SegmentationProfilingInfo *profiling) const {
     std::vector<Matrix2D> ans;
 
     const auto &meta_data = segmentation_meta_data_;
@@ -448,6 +663,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
       has_last_chunk = ((n - window_size) % window_shift) > 0;
     }
     int32_t total_chunks = num_chunks + static_cast<int32_t>(has_last_chunk);
+    if constexpr (EnableProfiling) {
+      profiling->chunks = total_chunks;
+    }
 
     ans.reserve(total_chunks);
 
@@ -466,21 +684,30 @@ class OfflineSpeakerDiarizationPyannoteImpl
           std::min(batch_size, total_chunks - batch_start);
       size_t batch_num_samples =
           static_cast<size_t>(current_batch) * window_size;
-      std::vector<float> batch_audio(batch_num_samples);
-
-      for (int32_t i = 0; i != current_batch; ++i) {
-        int32_t chunk_index = batch_start + i;
-        int64_t start = static_cast<int64_t>(chunk_index) * window_shift;
-        int64_t end =
-            std::min<int64_t>(start + window_size, static_cast<int64_t>(n));
-        if (start < n && end > start) {
-          std::copy(audio + start, audio + end,
-                    batch_audio.data() + static_cast<size_t>(i) * window_size);
-        }
+      std::vector<float> batch_audio = RunProfiled<EnableProfiling>(
+          EnableProfiling ? &profiling->prepare_seconds : nullptr, [&]() {
+            std::vector<float> samples(batch_num_samples);
+            for (int32_t i = 0; i != current_batch; ++i) {
+              int32_t chunk_index = batch_start + i;
+              int64_t start = static_cast<int64_t>(chunk_index) * window_shift;
+              int64_t end = std::min<int64_t>(
+                  start + window_size, static_cast<int64_t>(n));
+              if (start < n && end > start) {
+                std::copy(
+                    audio + start, audio + end,
+                    samples.data() + static_cast<size_t>(i) * window_size);
+              }
+            }
+            return samples;
+          });
+      if constexpr (EnableProfiling) {
+        ++profiling->batches;
+        profiling->prepared_samples += batch_num_samples;
       }
 
       std::vector<Matrix2D> batch_results =
-          ProcessChunkBatch(batch_audio.data(), current_batch);
+          ProcessChunkBatch<EnableProfiling>(batch_audio.data(), current_batch,
+                                             profiling);
       if (static_cast<int32_t>(batch_results.size()) != current_batch) {
         throw std::runtime_error(
             "Speaker segmentation output batch size does not match input");
@@ -499,40 +726,51 @@ class OfflineSpeakerDiarizationPyannoteImpl
     return ans;
   }
 
-  std::vector<Matrix2D> ProcessChunkBatch(const float *p,
-                                          int32_t batch_size) const {
+  template <bool EnableProfiling>
+  std::vector<Matrix2D> ProcessChunkBatch(
+      const float *p, int32_t batch_size,
+      SegmentationProfilingInfo *profiling) const {
     const auto &meta_data = segmentation_meta_data_;
     int32_t window_size = meta_data.window_size;
 
-    auto memory_info =
-        Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
-
-    std::array<int64_t, 3> shape = {batch_size, 1, window_size};
     size_t num_samples = static_cast<size_t>(batch_size) * window_size;
+    Ort::Value x = RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->tensor_seconds : nullptr, [&]() {
+          auto memory_info =
+              Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
+          std::array<int64_t, 3> shape = {batch_size, 1, window_size};
+          return Ort::Value::CreateTensor(
+              memory_info, const_cast<float *>(p), num_samples, shape.data(),
+              shape.size());
+        });
 
-    Ort::Value x =
-        Ort::Value::CreateTensor(memory_info, const_cast<float *>(p),
-                                 num_samples, shape.data(), shape.size());
+    Ort::Value out = RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->inference_seconds : nullptr,
+        [&]() { return segmentation_model_->Forward(std::move(x)); });
+    std::vector<Matrix2D> ans = RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->output_copy_seconds : nullptr, [&]() {
+          std::vector<int64_t> out_shape =
+              out.GetTensorTypeAndShapeInfo().GetShape();
+          if (out_shape.size() != 3 || out_shape[0] != batch_size ||
+              out_shape[1] <= 0 || out_shape[2] <= 0) {
+            throw std::runtime_error(
+                "Unexpected speaker segmentation output tensor shape");
+          }
 
-    Ort::Value out = segmentation_model_->Forward(std::move(x));
-    std::vector<int64_t> out_shape = out.GetTensorTypeAndShapeInfo().GetShape();
-    if (out_shape.size() != 3 || out_shape[0] != batch_size ||
-        out_shape[1] <= 0 || out_shape[2] <= 0) {
-      throw std::runtime_error(
-          "Unexpected speaker segmentation output tensor shape");
-    }
-
-    size_t one_output_size =
-        static_cast<size_t>(out_shape[1]) * out_shape[2];
-    const float *out_data = out.GetTensorData<float>();
-    std::vector<Matrix2D> ans;
-    ans.reserve(batch_size);
-    for (int32_t i = 0; i != batch_size; ++i) {
-      Matrix2D m(out_shape[1], out_shape[2]);
-      const float *begin = out_data + static_cast<size_t>(i) * one_output_size;
-      std::copy(begin, begin + one_output_size, &m(0, 0));
-      ans.push_back(std::move(m));
-    }
+          size_t one_output_size =
+              static_cast<size_t>(out_shape[1]) * out_shape[2];
+          const float *out_data = out.GetTensorData<float>();
+          std::vector<Matrix2D> results;
+          results.reserve(batch_size);
+          for (int32_t i = 0; i != batch_size; ++i) {
+            Matrix2D m(out_shape[1], out_shape[2]);
+            const float *begin =
+                out_data + static_cast<size_t>(i) * one_output_size;
+            std::copy(begin, begin + one_output_size, &m(0, 0));
+            results.push_back(std::move(m));
+          }
+          return results;
+        });
     return ans;
   }
 
@@ -693,12 +931,14 @@ class OfflineSpeakerDiarizationPyannoteImpl
    *         where ans.row[i] contains the embedding for the
    *         i-th (chunk, speaker) pair
    */
+  template <bool EnableProfiling>
   Matrix2D ComputeEmbeddings(
       const float *audio, int32_t n,
       const std::vector<std::vector<Int32Pair>> &sample_indexes,
       std::vector<int32_t> *valid_indexes,
       OfflineSpeakerDiarizationProgressCallback callback,
-      void *callback_arg, bool *stopped) const {
+      void *callback_arg, bool *stopped,
+      EmbeddingProfilingInfo *profiling) const {
     const auto &meta_data = segmentation_meta_data_;
     int32_t sample_rate = meta_data.sample_rate;
     Matrix2D ans(sample_indexes.size(), embedding_extractor_->Dim());
@@ -712,6 +952,11 @@ class OfflineSpeakerDiarizationPyannoteImpl
     int32_t num_jobs = static_cast<int32_t>(sample_indexes.size());
     int32_t effective_workers =
         std::min(config_.embedding_num_workers, num_jobs);
+    if constexpr (EnableProfiling) {
+      profiling->jobs = num_jobs;
+      profiling->workers = effective_workers;
+      profiling->job_profiles.resize(num_jobs);
+    }
     if (config_.embedding.debug) {
       SHERPA_ONNX_LOGE(
           "OfflineSpeakerDiarization: embedding jobs=%d, workers=%d", num_jobs,
@@ -737,8 +982,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
               break;
             }
 
-            embeddings[job] = ComputeOneEmbedding(
-                audio, n, sample_indexes[job], sample_rate);
+            embeddings[job] = ComputeOneEmbedding<EnableProfiling>(
+                audio, n, sample_indexes[job], sample_rate,
+                EnableProfiling ? &profiling->job_profiles[job] : nullptr);
             {
               std::lock_guard<std::mutex> lock(completion_mutex);
               completed_jobs.push_back(job);
@@ -827,33 +1073,45 @@ class OfflineSpeakerDiarizationPyannoteImpl
         return {};
       }
 
-      int32_t cur_row_index = 0;
-      for (int32_t i = 0; i != num_jobs; ++i) {
-        const auto &embedding = embeddings[i];
-        if (std::none_of(embedding.begin(), embedding.end(), IsNaNWrapper)) {
-          std::copy(embedding.begin(), embedding.end(),
-                    &ans(cur_row_index, 0));
-          ++cur_row_index;
-          valid_indexes->push_back(i);
-        }
-      }
+      RunProfiled<EnableProfiling>(
+          EnableProfiling ? &profiling->result_copy_seconds : nullptr, [&]() {
+            int32_t cur_row_index = 0;
+            for (int32_t i = 0; i != num_jobs; ++i) {
+              const auto &embedding = embeddings[i];
+              if (std::none_of(embedding.begin(), embedding.end(),
+                               IsNaNWrapper)) {
+                std::copy(embedding.begin(), embedding.end(),
+                          &ans(cur_row_index, 0));
+                ++cur_row_index;
+                valid_indexes->push_back(i);
+              }
+            }
 
-      if (cur_row_index != ans.rows()) {
-        auto seq = Eigen::seqN(0, cur_row_index);
-        ans = ans(seq, Eigen::placeholders::all);
-      }
+            if (cur_row_index != ans.rows()) {
+              auto seq = Eigen::seqN(0, cur_row_index);
+              ans = ans(seq, Eigen::placeholders::all);
+            }
+            return 0;
+          });
       return ans;
     }
 
     int32_t k = 0;
     int32_t cur_row_index = 0;
     for (const auto &v : sample_indexes) {
-      std::vector<float> embedding =
-          ComputeOneEmbedding(audio, n, v, sample_rate);
+      std::vector<float> embedding = ComputeOneEmbedding<EnableProfiling>(
+          audio, n, v, sample_rate,
+          EnableProfiling ? &profiling->job_profiles[k] : nullptr);
 
       if (std::none_of(embedding.begin(), embedding.end(), IsNaNWrapper)) {
         // a valid embedding
-        std::copy(embedding.begin(), embedding.end(), &ans(cur_row_index, 0));
+        RunProfiled<EnableProfiling>(
+            EnableProfiling ? &profiling->result_copy_seconds : nullptr,
+            [&]() {
+              std::copy(embedding.begin(), embedding.end(),
+                        &ans(cur_row_index, 0));
+              return 0;
+            });
         cur_row_index += 1;
         valid_indexes->push_back(k);
       }
@@ -874,26 +1132,63 @@ class OfflineSpeakerDiarizationPyannoteImpl
     return ans;
   }
 
+  template <bool EnableProfiling>
   std::vector<float> ComputeOneEmbedding(
       const float *audio, int32_t n, const std::vector<Int32Pair> &indexes,
-      int32_t sample_rate) const {
-    auto stream = embedding_extractor_->CreateStream();
+      int32_t sample_rate, EmbeddingJobProfilingInfo *profiling) const {
+    std::chrono::steady_clock::time_point total_start;
+    if constexpr (EnableProfiling) {
+      total_start = std::chrono::steady_clock::now();
+    }
+
+    auto stream = RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->create_stream_seconds : nullptr,
+        [&]() { return embedding_extractor_->CreateStream(); });
+    int64_t accepted_samples = 0;
     for (const auto &p : indexes) {
       int32_t end = (p.second <= n) ? p.second : n;
       int32_t num_samples = end - p.first;
 
       if (num_samples > 0) {
-        stream->AcceptWaveform(sample_rate, audio + p.first, num_samples);
+        RunProfiled<EnableProfiling>(
+            EnableProfiling ? &profiling->accept_waveform_seconds : nullptr,
+            [&]() {
+              stream->AcceptWaveform(sample_rate, audio + p.first, num_samples);
+              return 0;
+            });
+        if constexpr (EnableProfiling) {
+          accepted_samples += num_samples;
+          ++profiling->sample_ranges;
+        }
       }
     }
 
-    stream->InputFinished();
-    if (!embedding_extractor_->IsReady(stream.get())) {
+    RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->input_finished_seconds : nullptr, [&]() {
+          stream->InputFinished();
+          return 0;
+        });
+    bool is_ready = RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->ready_check_seconds : nullptr,
+        [&]() { return embedding_extractor_->IsReady(stream.get()); });
+    if (!is_ready) {
       throw std::runtime_error(
           "Speaker embedding segment is unexpectedly too short");
     }
 
-    return embedding_extractor_->Compute(stream.get());
+    std::vector<float> ans;
+    if constexpr (EnableProfiling) {
+      profiling->accepted_samples = accepted_samples;
+      ans = embedding_extractor_->ComputeWithProfiling(
+          stream.get(), &profiling->extractor);
+      profiling->total_seconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                        total_start)
+              .count();
+    } else {
+      ans = embedding_extractor_->Compute(stream.get());
+    }
+    return ans;
   }
 
   std::unordered_map<Int32Pair, int32_t, PairHash> ConvertChunkSpeakerToCluster(

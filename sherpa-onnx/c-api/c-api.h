@@ -3920,6 +3920,8 @@ typedef struct SherpaOnnxOfflineSpeakerDiarizationConfig {
    * stage. When non-zero, the diarizer can be processed only once.
    */
   int32_t release_model_resources_after_use;
+  /** Print detailed segmentation and embedding timing statistics. */
+  int32_t enable_profiling;
 } SherpaOnnxOfflineSpeakerDiarizationConfig;
 
 /** @brief Opaque offline speaker diarization handle. */

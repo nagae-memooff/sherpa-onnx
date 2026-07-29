@@ -1952,6 +1952,8 @@ struct OfflineSpeakerDiarizationConfig {
    * The diarizer can be processed only once when enabled.
    */
   bool release_model_resources_after_use = false;
+  /** Print detailed segmentation and embedding timing statistics. */
+  bool enable_profiling = false;
 };
 
 /** @brief One diarization segment. */

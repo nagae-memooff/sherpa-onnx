@@ -50,6 +50,9 @@ void OfflineSpeakerDiarizationConfig::Register(ParseOptions *po) {
       &release_model_resources_after_use,
       "Release segmentation and embedding model resources after each stage. "
       "The diarizer can be processed only once when enabled.");
+
+  po->Register("enable-profiling", &enable_profiling,
+               "Print detailed segmentation and embedding timing statistics.");
 }
 
 bool OfflineSpeakerDiarizationConfig::Validate() const {
@@ -102,7 +105,8 @@ std::string OfflineSpeakerDiarizationConfig::ToString() const {
   os << "segmentation_batch_size=" << segmentation_batch_size << ", ";
   os << "embedding_num_workers=" << embedding_num_workers << ", ";
   os << "release_model_resources_after_use="
-     << (release_model_resources_after_use ? "True" : "False") << ")";
+     << (release_model_resources_after_use ? "True" : "False") << ", ";
+  os << "enable_profiling=" << (enable_profiling ? "True" : "False") << ")";
 
   return os.str();
 }
