@@ -43,7 +43,12 @@ void OfflineSpeakerDiarizationConfig::Register(ParseOptions *po) {
                "Number of segmentation windows processed by one model run.");
 
   po->Register("embedding-num-workers", &embedding_num_workers,
-               "Number of concurrent speaker embedding jobs.");
+               "Number of concurrent embedding jobs, or concurrent batches "
+               "when embedding-batch-size is greater than 1.");
+
+  po->Register(
+      "embedding-batch-size", &embedding_batch_size,
+      "Number of equal-length speaker embedding jobs per model run.");
 
   po->Register(
       "release-model-resources-after-use",
@@ -90,6 +95,12 @@ bool OfflineSpeakerDiarizationConfig::Validate() const {
     return false;
   }
 
+  if (embedding_batch_size < 1) {
+    SHERPA_ONNX_LOGE("embedding_batch_size should be > 0. Given %d",
+                     embedding_batch_size);
+    return false;
+  }
+
   return true;
 }
 
@@ -104,6 +115,7 @@ std::string OfflineSpeakerDiarizationConfig::ToString() const {
   os << "min_duration_off=" << min_duration_off << ", ";
   os << "segmentation_batch_size=" << segmentation_batch_size << ", ";
   os << "embedding_num_workers=" << embedding_num_workers << ", ";
+  os << "embedding_batch_size=" << embedding_batch_size << ", ";
   os << "release_model_resources_after_use="
      << (release_model_resources_after_use ? "True" : "False") << ", ";
   os << "enable_profiling=" << (enable_profiling ? "True" : "False") << ")";

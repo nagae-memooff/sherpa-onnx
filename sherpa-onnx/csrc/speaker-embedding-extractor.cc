@@ -83,6 +83,11 @@ bool SpeakerEmbeddingExtractor::IsReady(OnlineStream *s) const {
   return impl_->IsReady(s);
 }
 
+int32_t SpeakerEmbeddingExtractor::NumFramesForSamples(
+    int64_t num_samples) const {
+  return impl_->NumFramesForSamples(num_samples);
+}
+
 std::vector<float> SpeakerEmbeddingExtractor::Compute(OnlineStream *s) const {
   return impl_->Compute(s);
 }
@@ -91,6 +96,20 @@ std::vector<float> SpeakerEmbeddingExtractor::ComputeWithProfiling(
     OnlineStream *s,
     SpeakerEmbeddingExtractorProfilingInfo *profiling) const {
   return impl_->ComputeWithProfiling(s, profiling);
+}
+
+std::vector<std::vector<float>> SpeakerEmbeddingExtractor::ComputeBatch(
+    const std::vector<OnlineStream *> &streams) const {
+  return impl_->ComputeBatch(streams);
+}
+
+std::vector<std::vector<float>>
+SpeakerEmbeddingExtractor::ComputeBatchWithProfiling(
+    const std::vector<OnlineStream *> &streams,
+    std::vector<SpeakerEmbeddingExtractorProfilingInfo> *stream_profiling,
+    SpeakerEmbeddingExtractorBatchProfilingInfo *batch_profiling) const {
+  return impl_->ComputeBatchWithProfiling(streams, stream_profiling,
+                                          batch_profiling);
 }
 
 #if __ANDROID_API__ >= 9

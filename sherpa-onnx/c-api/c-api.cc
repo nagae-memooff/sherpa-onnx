@@ -3184,6 +3184,9 @@ GetOfflineSpeakerDiarizationConfig(
 
   sd_config.enable_profiling = config->enable_profiling != 0;
 
+  sd_config.embedding_batch_size =
+      SHERPA_ONNX_OR(config->embedding_batch_size, 1);
+
   if (sd_config.segmentation.debug || sd_config.embedding.debug) {
 #if __OHOS__
     SHERPA_ONNX_LOGE("%{public}s\n", sd_config.ToString().c_str());

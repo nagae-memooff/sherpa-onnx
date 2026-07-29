@@ -1954,6 +1954,8 @@ struct OfflineSpeakerDiarizationConfig {
   bool release_model_resources_after_use = false;
   /** Print detailed segmentation and embedding timing statistics. */
   bool enable_profiling = false;
+  /** Number of equal-length embedding jobs processed by one model run. */
+  int32_t embedding_batch_size = 1;
 };
 
 /** @brief One diarization segment. */

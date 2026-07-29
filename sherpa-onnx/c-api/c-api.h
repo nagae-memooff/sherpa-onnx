@@ -3922,6 +3922,10 @@ typedef struct SherpaOnnxOfflineSpeakerDiarizationConfig {
   int32_t release_model_resources_after_use;
   /** Print detailed segmentation and embedding timing statistics. */
   int32_t enable_profiling;
+  /**
+   * Number of equal-length speaker embedding jobs processed by one model run.
+   */
+  int32_t embedding_batch_size;
 } SherpaOnnxOfflineSpeakerDiarizationConfig;
 
 /** @brief Opaque offline speaker diarization handle. */

@@ -43,6 +43,13 @@ struct SpeakerEmbeddingExtractorProfilingInfo {
   double output_copy_seconds = 0;
 };
 
+struct SpeakerEmbeddingExtractorBatchProfilingInfo {
+  int32_t batch_size = 0;
+  double prepare_tensor_seconds = 0;
+  double inference_seconds = 0;
+  double output_copy_seconds = 0;
+};
+
 class SpeakerEmbeddingExtractorImpl;
 
 class SpeakerEmbeddingExtractor {
@@ -66,6 +73,8 @@ class SpeakerEmbeddingExtractor {
   // can be used to compute embeddings.
   bool IsReady(OnlineStream *s) const;
 
+  int32_t NumFramesForSamples(int64_t num_samples) const;
+
   // Compute the speaker embedding from the available unprocessed features
   // of the given stream
   //
@@ -74,6 +83,14 @@ class SpeakerEmbeddingExtractor {
 
   std::vector<float> ComputeWithProfiling(
       OnlineStream *s, SpeakerEmbeddingExtractorProfilingInfo *profiling) const;
+
+  std::vector<std::vector<float>> ComputeBatch(
+      const std::vector<OnlineStream *> &streams) const;
+
+  std::vector<std::vector<float>> ComputeBatchWithProfiling(
+      const std::vector<OnlineStream *> &streams,
+      std::vector<SpeakerEmbeddingExtractorProfilingInfo> *stream_profiling,
+      SpeakerEmbeddingExtractorBatchProfilingInfo *batch_profiling) const;
 
  private:
   std::unique_ptr<SpeakerEmbeddingExtractorImpl> impl_;

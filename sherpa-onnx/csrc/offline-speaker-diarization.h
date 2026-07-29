@@ -35,6 +35,9 @@ struct OfflineSpeakerDiarizationConfig {
   // Number of concurrent embedding jobs. All workers share one ORT session.
   int32_t embedding_num_workers = 1;
 
+  // Number of equal-length embedding jobs processed by one model run.
+  int32_t embedding_batch_size = 1;
+
   // Release segmentation and embedding model resources as soon as each stage
   // finishes. A diarizer with this option enabled can be processed only once.
   bool release_model_resources_after_use = false;
@@ -51,7 +54,7 @@ struct OfflineSpeakerDiarizationConfig {
       float min_duration_off, int32_t segmentation_batch_size = 1,
       int32_t embedding_num_workers = 1,
       bool release_model_resources_after_use = false,
-      bool enable_profiling = false)
+      bool enable_profiling = false, int32_t embedding_batch_size = 1)
       : segmentation(segmentation),
         embedding(embedding),
         clustering(clustering),
@@ -59,6 +62,7 @@ struct OfflineSpeakerDiarizationConfig {
         min_duration_off(min_duration_off),
         segmentation_batch_size(segmentation_batch_size),
         embedding_num_workers(embedding_num_workers),
+        embedding_batch_size(embedding_batch_size),
         release_model_resources_after_use(
             release_model_resources_after_use),
         enable_profiling(enable_profiling) {}

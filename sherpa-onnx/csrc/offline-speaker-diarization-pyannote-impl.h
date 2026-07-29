@@ -97,13 +97,21 @@ struct EmbeddingJobProfilingInfo {
   SpeakerEmbeddingExtractorProfilingInfo extractor;
 };
 
+struct EmbeddingBatchProfilingInfo {
+  int32_t jobs = 0;
+  double total_seconds = 0;
+  SpeakerEmbeddingExtractorBatchProfilingInfo extractor;
+};
+
 struct EmbeddingProfilingInfo {
   int32_t jobs = 0;
   int32_t workers = 0;
+  int32_t batches = 0;
   double model_init_seconds = 0;
   double result_copy_seconds = 0;
   double release_seconds = 0;
   std::vector<EmbeddingJobProfilingInfo> job_profiles;
+  std::vector<EmbeddingBatchProfilingInfo> batch_profiles;
 };
 
 struct DiarizationProfilingInfo {
@@ -465,6 +473,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     double inference_seconds = 0;
     double output_copy_seconds = 0;
     double worker_seconds = 0;
+    double batch_worker_seconds = 0;
     std::vector<double> job_seconds;
     job_seconds.reserve(profiling.job_profiles.size());
 
@@ -484,6 +493,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
       worker_seconds += p.total_seconds;
       job_seconds.push_back(p.total_seconds);
     }
+    for (const auto &p : profiling.batch_profiles) {
+      prepare_tensor_seconds += p.extractor.prepare_tensor_seconds;
+      inference_seconds += p.extractor.inference_seconds;
+      output_copy_seconds += p.extractor.output_copy_seconds;
+      batch_worker_seconds += p.total_seconds;
+    }
 
     double reuse =
         source_samples > 0
@@ -493,13 +508,19 @@ class OfflineSpeakerDiarizationPyannoteImpl
     os << std::fixed << std::setprecision(3)
        << "[sherpa][profile] embedding"
        << " wall_s=" << wall_seconds << " jobs=" << profiling.jobs
-       << " workers=" << profiling.workers
+       << " workers=" << profiling.workers << " batches=" << profiling.batches
+       << " batch_size=" << config_.embedding_batch_size
+       << " avg_batch="
+       << (profiling.batches > 0
+               ? static_cast<double>(profiling.jobs) / profiling.batches
+               : 0)
        << " model_init_s=" << profiling.model_init_seconds
        << " source_samples=" << source_samples
        << " accepted_samples=" << accepted_samples
        << " sample_reuse=" << reuse << " sample_ranges=" << sample_ranges
        << " feature_frames=" << feature_frames
        << " worker_sum_s=" << worker_seconds
+       << " batch_worker_sum_s=" << batch_worker_seconds
        << " job_p50_ms=" << Percentile(job_seconds, 0.50) * 1000
        << " job_p95_ms=" << Percentile(job_seconds, 0.95) * 1000
        << " job_max_ms=" << Percentile(job_seconds, 1.0) * 1000
@@ -950,12 +971,22 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
 
     int32_t num_jobs = static_cast<int32_t>(sample_indexes.size());
+    if constexpr (EnableProfiling) {
+      profiling->jobs = num_jobs;
+      profiling->job_profiles.resize(num_jobs);
+    }
+
+    if (config_.embedding_batch_size > 1) {
+      return ComputeEmbeddingsBatched<EnableProfiling>(
+          audio, n, sample_indexes, valid_indexes, callback, callback_arg,
+          stopped, profiling);
+    }
+
     int32_t effective_workers =
         std::min(config_.embedding_num_workers, num_jobs);
     if constexpr (EnableProfiling) {
-      profiling->jobs = num_jobs;
       profiling->workers = effective_workers;
-      profiling->job_profiles.resize(num_jobs);
+      profiling->batches = num_jobs;
     }
     if (config_.embedding.debug) {
       SHERPA_ONNX_LOGE(
@@ -1129,6 +1160,293 @@ class OfflineSpeakerDiarizationPyannoteImpl
       ans = ans(seq, Eigen::placeholders::all);
     }
 
+    return ans;
+  }
+
+  template <bool EnableProfiling>
+  Matrix2D ComputeEmbeddingsBatched(
+      const float *audio, int32_t n,
+      const std::vector<std::vector<Int32Pair>> &sample_indexes,
+      std::vector<int32_t> *valid_indexes,
+      OfflineSpeakerDiarizationProgressCallback callback,
+      void *callback_arg, bool *stopped,
+      EmbeddingProfilingInfo *profiling) const {
+    struct BatchTask {
+      std::vector<int32_t> jobs;
+    };
+
+    int32_t num_jobs = static_cast<int32_t>(sample_indexes.size());
+    int32_t batch_size = std::min(config_.embedding_batch_size, num_jobs);
+    std::vector<BatchTask> batches;
+    std::unordered_map<int32_t, size_t> open_batch_by_frame_count;
+    for (int32_t job = 0; job != num_jobs; ++job) {
+      int64_t sample_count = 0;
+      for (const auto &p : sample_indexes[job]) {
+        int32_t end = std::min(p.second, n);
+        if (end > p.first) {
+          sample_count += end - p.first;
+        }
+      }
+
+      int32_t frame_count =
+          embedding_extractor_->NumFramesForSamples(sample_count);
+      auto iter = open_batch_by_frame_count.find(frame_count);
+      if (iter == open_batch_by_frame_count.end()) {
+        size_t index = batches.size();
+        batches.push_back({});
+        open_batch_by_frame_count.emplace(frame_count, index);
+        iter = open_batch_by_frame_count.find(frame_count);
+      }
+      BatchTask &task = batches[iter->second];
+      task.jobs.push_back(job);
+      if (static_cast<int32_t>(task.jobs.size()) == batch_size) {
+        open_batch_by_frame_count.erase(iter);
+      }
+    }
+
+    int32_t num_workers = std::min(
+        config_.embedding_num_workers, static_cast<int32_t>(batches.size()));
+    if constexpr (EnableProfiling) {
+      profiling->workers = num_workers;
+      profiling->batches = static_cast<int32_t>(batches.size());
+      profiling->batch_profiles.resize(batches.size());
+    }
+    if (config_.embedding.debug) {
+      SHERPA_ONNX_LOGE(
+          "OfflineSpeakerDiarization: embedding jobs=%d, workers=%d, "
+          "batch_size=%d, batches=%d",
+          num_jobs, num_workers, batch_size,
+          static_cast<int32_t>(batches.size()));
+    }
+
+    std::vector<std::vector<float>> embeddings(num_jobs);
+    std::atomic<int32_t> next_batch{0};
+    std::atomic<int32_t> active_workers{num_workers};
+    std::atomic<bool> cancel{false};
+    std::mutex completion_mutex;
+    std::condition_variable completion_cv;
+    std::deque<int32_t> completed_batches;
+    std::exception_ptr worker_exception;
+
+    auto worker = [&]() {
+      try {
+        while (!cancel.load(std::memory_order_acquire)) {
+          int32_t batch = next_batch.fetch_add(1, std::memory_order_relaxed);
+          if (batch >= static_cast<int32_t>(batches.size())) {
+            break;
+          }
+
+          std::vector<std::vector<float>> outputs =
+              ComputeEmbeddingBatch<EnableProfiling>(
+                  audio, n, sample_indexes, batches[batch].jobs,
+                  EnableProfiling ? &profiling->job_profiles : nullptr,
+                  EnableProfiling ? &profiling->batch_profiles[batch]
+                                  : nullptr);
+          for (size_t i = 0; i != batches[batch].jobs.size(); ++i) {
+            embeddings[batches[batch].jobs[i]] = std::move(outputs[i]);
+          }
+          {
+            std::lock_guard<std::mutex> lock(completion_mutex);
+            completed_batches.push_back(batch);
+          }
+          completion_cv.notify_one();
+        }
+      } catch (...) {
+        {
+          std::lock_guard<std::mutex> lock(completion_mutex);
+          if (!worker_exception) {
+            worker_exception = std::current_exception();
+          }
+        }
+        cancel.store(true, std::memory_order_release);
+      }
+
+      active_workers.fetch_sub(1, std::memory_order_acq_rel);
+      completion_cv.notify_one();
+    };
+
+    std::vector<std::thread> workers;
+    workers.reserve(num_workers);
+    try {
+      for (int32_t i = 0; i != num_workers; ++i) {
+        workers.emplace_back(worker);
+      }
+    } catch (...) {
+      cancel.store(true, std::memory_order_release);
+      for (auto &t : workers) {
+        t.join();
+      }
+      throw;
+    }
+
+    int32_t reported = 0;
+    std::exception_ptr coordinator_exception;
+    try {
+      while (reported < num_jobs) {
+        std::unique_lock<std::mutex> lock(completion_mutex);
+        completion_cv.wait(lock, [&]() {
+          return !completed_batches.empty() || worker_exception ||
+                 active_workers.load(std::memory_order_acquire) == 0;
+        });
+
+        if (worker_exception) {
+          cancel.store(true, std::memory_order_release);
+          break;
+        }
+
+        while (!completed_batches.empty()) {
+          int32_t batch = completed_batches.front();
+          completed_batches.pop_front();
+          int32_t completed =
+              static_cast<int32_t>(batches[batch].jobs.size());
+          lock.unlock();
+          for (int32_t i = 0; i != completed; ++i) {
+            ++reported;
+            if (ShouldStop(callback, reported, num_jobs, callback_arg)) {
+              *stopped = true;
+              cancel.store(true, std::memory_order_release);
+              break;
+            }
+          }
+          lock.lock();
+          if (*stopped) {
+            break;
+          }
+        }
+
+        if (*stopped ||
+            (completed_batches.empty() &&
+             active_workers.load(std::memory_order_acquire) == 0)) {
+          break;
+        }
+      }
+    } catch (...) {
+      coordinator_exception = std::current_exception();
+      cancel.store(true, std::memory_order_release);
+    }
+
+    for (auto &t : workers) {
+      t.join();
+    }
+    if (coordinator_exception) {
+      std::rethrow_exception(coordinator_exception);
+    }
+    if (worker_exception) {
+      std::rethrow_exception(worker_exception);
+    }
+    if (*stopped) {
+      return {};
+    }
+
+    Matrix2D ans(num_jobs, embedding_extractor_->Dim());
+    RunProfiled<EnableProfiling>(
+        EnableProfiling ? &profiling->result_copy_seconds : nullptr, [&]() {
+          int32_t cur_row_index = 0;
+          for (int32_t i = 0; i != num_jobs; ++i) {
+            const auto &embedding = embeddings[i];
+            if (std::none_of(embedding.begin(), embedding.end(),
+                             [](float f) { return std::isnan(f); })) {
+              std::copy(embedding.begin(), embedding.end(),
+                        &ans(cur_row_index, 0));
+              ++cur_row_index;
+              valid_indexes->push_back(i);
+            }
+          }
+          if (cur_row_index != ans.rows()) {
+            auto seq = Eigen::seqN(0, cur_row_index);
+            ans = ans(seq, Eigen::placeholders::all);
+          }
+          return 0;
+        });
+    return ans;
+  }
+
+  template <bool EnableProfiling>
+  std::vector<std::vector<float>> ComputeEmbeddingBatch(
+      const float *audio, int32_t n,
+      const std::vector<std::vector<Int32Pair>> &sample_indexes,
+      const std::vector<int32_t> &jobs,
+      std::vector<EmbeddingJobProfilingInfo> *job_profiling,
+      EmbeddingBatchProfilingInfo *batch_profiling) const {
+    std::chrono::steady_clock::time_point batch_start;
+    if constexpr (EnableProfiling) {
+      batch_start = std::chrono::steady_clock::now();
+      batch_profiling->jobs = static_cast<int32_t>(jobs.size());
+    }
+
+    int32_t sample_rate = segmentation_meta_data_.sample_rate;
+    std::vector<std::unique_ptr<OnlineStream>> streams;
+    std::vector<OnlineStream *> stream_ptrs;
+    streams.reserve(jobs.size());
+    stream_ptrs.reserve(jobs.size());
+    for (int32_t job : jobs) {
+      auto *p = EnableProfiling ? &(*job_profiling)[job] : nullptr;
+      auto stream = RunProfiled<EnableProfiling>(
+          EnableProfiling ? &p->create_stream_seconds : nullptr,
+          [&]() { return embedding_extractor_->CreateStream(); });
+      for (const auto &range : sample_indexes[job]) {
+        int32_t end = std::min(range.second, n);
+        int32_t num_samples = end - range.first;
+        if (num_samples > 0) {
+          RunProfiled<EnableProfiling>(
+              EnableProfiling ? &p->accept_waveform_seconds : nullptr, [&]() {
+                stream->AcceptWaveform(sample_rate, audio + range.first,
+                                       num_samples);
+                return 0;
+              });
+          if constexpr (EnableProfiling) {
+            p->accepted_samples += num_samples;
+            ++p->sample_ranges;
+          }
+        }
+      }
+      RunProfiled<EnableProfiling>(
+          EnableProfiling ? &p->input_finished_seconds : nullptr, [&]() {
+            stream->InputFinished();
+            return 0;
+          });
+      bool ready = RunProfiled<EnableProfiling>(
+          EnableProfiling ? &p->ready_check_seconds : nullptr,
+          [&]() { return embedding_extractor_->IsReady(stream.get()); });
+      if (!ready) {
+        throw std::runtime_error(
+            "Speaker embedding segment is unexpectedly too short");
+      }
+      stream_ptrs.push_back(stream.get());
+      streams.push_back(std::move(stream));
+    }
+
+    std::vector<std::vector<float>> ans;
+    if constexpr (EnableProfiling) {
+      std::vector<SpeakerEmbeddingExtractorProfilingInfo> stream_profiles;
+      ans = embedding_extractor_->ComputeBatchWithProfiling(
+          stream_ptrs, &stream_profiles, &batch_profiling->extractor);
+      double shared_batch_seconds =
+          (batch_profiling->extractor.prepare_tensor_seconds +
+           batch_profiling->extractor.inference_seconds +
+           batch_profiling->extractor.output_copy_seconds) /
+          jobs.size();
+      for (size_t i = 0; i != jobs.size(); ++i) {
+        (*job_profiling)[jobs[i]].extractor = stream_profiles[i];
+        auto &p = (*job_profiling)[jobs[i]];
+        p.total_seconds =
+            p.create_stream_seconds + p.accept_waveform_seconds +
+            p.input_finished_seconds + p.ready_check_seconds +
+            p.extractor.get_frames_seconds + p.extractor.normalize_seconds +
+            shared_batch_seconds;
+      }
+      batch_profiling->total_seconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                        batch_start)
+              .count();
+    } else {
+      ans = embedding_extractor_->ComputeBatch(stream_ptrs);
+    }
+
+    if (ans.size() != jobs.size()) {
+      throw std::runtime_error(
+          "Speaker embedding batch output size does not match input");
+    }
     return ans;
   }
 
