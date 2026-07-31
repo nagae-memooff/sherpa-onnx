@@ -6,13 +6,16 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <numeric>
 #include <random>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,7 +37,118 @@
 
 namespace sherpa_onnx {
 
+struct Qwen3DecodeProfile {
+  double total_ms = 0.0;
+  double get_frames_ms = 0.0;
+  double normalize_ms = 0.0;
+  double conv_ms = 0.0;
+  double encoder_ms = 0.0;
+  double trim_audio_ms = 0.0;
+  double prompt_ms = 0.0;
+  double kv_cache_create_ms = 0.0;
+  double prefill_forward_ms = 0.0;
+  double prefill_cache_update_ms = 0.0;
+  double prefill_sample_ms = 0.0;
+  double token_forward_total_ms = 0.0;
+  double token_forward_max_ms = 0.0;
+  double token_cache_update_total_ms = 0.0;
+  double token_sample_total_ms = 0.0;
+  double tokenizer_decode_ms = 0.0;
+  double homophone_replace_ms = 0.0;
+  int32_t feature_frames = 0;
+  int32_t audio_tokens = 0;
+  int32_t context_tokens = 0;
+  int32_t generated_tokens = 0;
+  int32_t forward_calls = 0;
+  int32_t token_steps = 0;
+  bool cuda_device_cache = false;
+  size_t kv_cache_bytes = 0;
+  size_t logits_d2h_bytes = 0;
+  size_t kv_delta_d2d_bytes = 0;
+
+  std::string AsJson() const {
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(3);
+    os << "{"
+       << "\"total_ms\":" << total_ms
+       << ",\"get_frames_ms\":" << get_frames_ms
+       << ",\"normalize_ms\":" << normalize_ms
+       << ",\"conv_ms\":" << conv_ms
+       << ",\"encoder_ms\":" << encoder_ms
+       << ",\"trim_audio_ms\":" << trim_audio_ms
+       << ",\"prompt_ms\":" << prompt_ms
+       << ",\"kv_cache_create_ms\":" << kv_cache_create_ms
+       << ",\"prefill_forward_ms\":" << prefill_forward_ms
+       << ",\"prefill_cache_update_ms\":" << prefill_cache_update_ms
+       << ",\"prefill_sample_ms\":" << prefill_sample_ms
+       << ",\"token_forward_total_ms\":" << token_forward_total_ms
+       << ",\"token_forward_avg_ms\":"
+       << (token_steps > 0 ? token_forward_total_ms / token_steps : 0.0)
+       << ",\"token_forward_max_ms\":" << token_forward_max_ms
+       << ",\"token_cache_update_total_ms\":"
+       << token_cache_update_total_ms
+       << ",\"token_sample_total_ms\":" << token_sample_total_ms
+       << ",\"tokenizer_decode_ms\":" << tokenizer_decode_ms
+       << ",\"homophone_replace_ms\":" << homophone_replace_ms
+       << ",\"feature_frames\":" << feature_frames
+       << ",\"audio_tokens\":" << audio_tokens
+       << ",\"context_tokens\":" << context_tokens
+       << ",\"generated_tokens\":" << generated_tokens
+       << ",\"forward_calls\":" << forward_calls
+       << ",\"token_steps\":" << token_steps
+       << ",\"cuda_device_cache\":"
+       << (cuda_device_cache ? "true" : "false")
+       << ",\"kv_cache_bytes\":" << kv_cache_bytes
+       << ",\"logits_d2h_bytes\":" << logits_d2h_bytes
+       << ",\"kv_delta_d2d_bytes\":" << kv_delta_d2d_bytes
+       << ",\"legacy_cache_h2d_bytes_estimate\":"
+       << (cuda_device_cache
+               ? kv_cache_bytes * static_cast<size_t>(forward_calls)
+               : 0)
+       << "}";
+    return os.str();
+  }
+};
+
 namespace {
+
+using ProfileClock = std::chrono::steady_clock;
+
+double ProfileElapsedMs(ProfileClock::time_point start) {
+  return std::chrono::duration<double, std::milli>(
+             ProfileClock::now() - start)
+      .count();
+}
+
+size_t TensorBytes(const Ort::Value &value) {
+  const auto info = value.GetTensorTypeAndShapeInfo();
+  size_t count = 1;
+  for (int64_t dim : info.GetShape()) {
+    if (dim <= 0) {
+      return 0;
+    }
+    count *= static_cast<size_t>(dim);
+  }
+  switch (info.GetElementType()) {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
+      return count * sizeof(float);
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:
+      return count * sizeof(uint16_t);
+    default:
+      return 0;
+  }
+}
+
+size_t KvDeltaBytes(
+    const std::vector<std::pair<Ort::Value, Ort::Value>> &kv_delta) {
+  size_t bytes = 0;
+  for (const auto &kv : kv_delta) {
+    bytes += TensorBytes(kv.first);
+    bytes += TensorBytes(kv.second);
+  }
+  return bytes;
+}
 
 // Mel-frame chunk length (in frames) assumed by the Qwen3-ASR conv frontend
 // when mapping log-mel features to audio tokens. Must match the chunk size
@@ -664,7 +778,7 @@ int64_t OfflineRecognizerQwen3ASRImpl::SampleTokenWithTemperatureAndTopP(
 
 OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     Ort::Value audio_features, int32_t audio_token_len,
-    OfflineStream *stream) const {
+    OfflineStream *stream, Qwen3DecodeProfile *profile) const {
   OfflineRecognitionResult result;
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
@@ -680,8 +794,13 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       stream->GetOptionFloat("temperature", qwen3_config.temperature);
   const float top_p = stream->GetOptionFloat("top_p", qwen3_config.top_p);
 
+  const auto trim_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   Ort::Value trimmed_audio_features =
       TrimAudioFeatures(std::move(audio_features), model_->Allocator());
+  if (profile) {
+    profile->trim_audio_ms += ProfileElapsedMs(trim_start);
+  }
 
   auto trimmed_shape =
       trimmed_audio_features.GetTensorTypeAndShapeInfo().GetShape();
@@ -706,6 +825,9 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     return result;
   }
 
+  const auto prompt_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
+
   // Optional per-stream hotwords via SetOption("hotwords", comma-separated
   // CSV).
   const std::string hotwords = Qwen3FormatHotwordsForPrompt(
@@ -728,8 +850,6 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     return result;
   }
 
-  std::vector<std::pair<Ort::Value, Ort::Value>> cache_kv =
-      model_->CreateEmptyKVCache(1);
   const int32_t model_max_len = model_->GetMaxTotalLen();
   int32_t max_seq_len = model_max_len;
   const int32_t max_total_len_opt =
@@ -829,6 +949,22 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     }
   }
 
+  if (profile) {
+    profile->prompt_ms += ProfileElapsedMs(prompt_start);
+    profile->audio_tokens = audio_token_len;
+    profile->context_tokens = context_len;
+    profile->cuda_device_cache = model_->UsesCudaDeviceCache();
+    profile->kv_cache_bytes = model_->GetKvCacheBytes(1);
+  }
+
+  const auto cache_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
+  std::vector<std::pair<Ort::Value, Ort::Value>> cache_kv =
+      model_->CreateEmptyKVCache(1);
+  if (profile) {
+    profile->kv_cache_create_ms += ProfileElapsedMs(cache_start);
+  }
+
   std::vector<int64_t> input_ids = source_ids;
   std::array<int64_t, 2> ids_shape{1, context_len};
   Ort::Value input_ids_tensor =
@@ -845,13 +981,29 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       BuildCachePosition(model_->Allocator(), context_len);
   Ort::Value audio_features_view = View(&trimmed_audio_features);
 
+  const auto prefill_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   auto tmp = model_->ForwardLLM(
       std::move(input_ids_tensor), std::move(audio_features_view),
       std::move(attention_mask), cache_position, cache_kv);
+  if (profile) {
+    profile->prefill_forward_ms += ProfileElapsedMs(prefill_start);
+    ++profile->forward_calls;
+  }
   Ort::Value logits = std::move(tmp.first);
   auto kv_outputs = std::move(tmp.second);
 
+  if (profile && profile->cuda_device_cache) {
+    profile->logits_d2h_bytes += TensorBytes(logits);
+    profile->kv_delta_d2d_bytes += KvDeltaBytes(kv_outputs);
+  }
+  const auto prefill_cache_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   model_->ApplyKvDeltaInplace(&cache_kv, kv_outputs, cache_position);
+  if (profile) {
+    profile->prefill_cache_update_ms +=
+        ProfileElapsedMs(prefill_cache_start);
+  }
 
   std::vector<int64_t> generated_ids;
   generated_ids.reserve(static_cast<size_t>(max_new_tokens));
@@ -865,18 +1017,19 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   }
 
   const int32_t time_dim = static_cast<int32_t>(log_shape[1]);
-  const int32_t last_idx = context_len - 1;
-  if (last_idx >= time_dim) {
+  const int32_t last_idx = time_dim - 1;
+  if (last_idx < 0) {
     if (config_.model_config.debug) {
       SHERPA_ONNX_LOGE(
-          "qwen3-asr: logits time_dim (%d) < context_len (%d); "
-          "cannot sample first token",
+          "qwen3-asr: invalid logits time_dim (%d) for context_len (%d)",
           time_dim, context_len);
     }
     result.text = "";
     return result;
   }
 
+  const auto prefill_sample_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   int64_t next_id = SampleTokenFromLogits(logits, last_idx, temperature, top_p);
 
   if (next_id == eos_id) {
@@ -912,6 +1065,9 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       result.text = "";
       return result;
     }
+  }
+  if (profile) {
+    profile->prefill_sample_ms += ProfileElapsedMs(prefill_sample_start);
   }
 
   generated_ids.push_back(next_id);
@@ -951,13 +1107,33 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
 
     Ort::Value audio_features_view2 = View(&trimmed_audio_features);
 
+    const auto token_forward_start =
+        profile ? ProfileClock::now() : ProfileClock::time_point{};
     auto tmp2 = model_->ForwardLLM(
         std::move(one_tensor), std::move(audio_features_view2),
         std::move(next_attention_mask), next_cache_position, cache_kv);
+    if (profile) {
+      const double forward_ms = ProfileElapsedMs(token_forward_start);
+      profile->token_forward_total_ms += forward_ms;
+      profile->token_forward_max_ms =
+          std::max(profile->token_forward_max_ms, forward_ms);
+      ++profile->forward_calls;
+      ++profile->token_steps;
+    }
     logits = std::move(tmp2.first);
     auto kv_outputs2 = std::move(tmp2.second);
 
+    if (profile && profile->cuda_device_cache) {
+      profile->logits_d2h_bytes += TensorBytes(logits);
+      profile->kv_delta_d2d_bytes += KvDeltaBytes(kv_outputs2);
+    }
+    const auto token_cache_start =
+        profile ? ProfileClock::now() : ProfileClock::time_point{};
     model_->ApplyKvDeltaInplace(&cache_kv, kv_outputs2, next_cache_position);
+    if (profile) {
+      profile->token_cache_update_total_ms +=
+          ProfileElapsedMs(token_cache_start);
+    }
 
     auto log_shape2 = logits.GetTensorTypeAndShapeInfo().GetShape();
     if (log_shape2.size() < 3) {
@@ -969,7 +1145,13 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       break;
     }
 
+    const auto token_sample_start =
+        profile ? ProfileClock::now() : ProfileClock::time_point{};
     next_id = SampleTokenFromLogits(logits, time_dim2 - 1, temperature, top_p);
+    if (profile) {
+      profile->token_sample_total_ms +=
+          ProfileElapsedMs(token_sample_start);
+    }
 
     if (next_id == eos_id) {
       break;
@@ -999,6 +1181,8 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     }
   }
 
+  const auto tokenizer_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   result.text = tokenizer_->Decode(cleaned_ids);
   RemoveUtf8ReplacementChars(&result.text);
 
@@ -1019,6 +1203,10 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
 
     result.tokens = std::move(all_tokens);
   }
+  if (profile) {
+    profile->tokenizer_decode_ms += ProfileElapsedMs(tokenizer_start);
+    profile->generated_tokens = static_cast<int32_t>(generated_ids.size());
+  }
 
   return result;
 }
@@ -1033,8 +1221,20 @@ void OfflineRecognizerQwen3ASRImpl::DecodeStreams(OfflineStream **ss,
 void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
+  std::unique_ptr<Qwen3DecodeProfile> profile_owner;
+  if (stream->GetOptionInt("profile", 0) != 0) {
+    profile_owner = std::make_unique<Qwen3DecodeProfile>();
+  }
+  Qwen3DecodeProfile *profile = profile_owner.get();
+  const auto total_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
 
+  const auto frames_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   std::vector<float> f = stream->GetFrames();
+  if (profile) {
+    profile->get_frames_ms += ProfileElapsedMs(frames_start);
+  }
   if (f.empty()) {
     OfflineRecognitionResult r;
     r.text = "";
@@ -1058,7 +1258,15 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
     return;
   }
 
+  if (profile) {
+    profile->feature_frames = num_frames;
+  }
+  const auto normalize_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   NormalizeWhisperFeatures(f.data(), num_frames, kQwen3MelDim);
+  if (profile) {
+    profile->normalize_ms += ProfileElapsedMs(normalize_start);
+  }
 
   int32_t F = kQwen3MelDim;
   int32_t feat_frames = num_frames;
@@ -1070,7 +1278,12 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
       memory_info, f.data(), static_cast<size_t>(feat_frames) * F,
       conv_input_shape.data(), conv_input_shape.size());
 
+  const auto conv_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   Ort::Value conv_output = model_->ForwardConvFrontend(std::move(conv_input));
+  if (profile) {
+    profile->conv_ms += ProfileElapsedMs(conv_start);
+  }
 
   auto conv_shape = conv_output.GetTensorTypeAndShapeInfo().GetShape();
   if (conv_shape.size() < 3 || conv_shape[1] <= 0) {
@@ -1094,8 +1307,13 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
       memory_info, mask_buf.get(), static_cast<size_t>(conv_num_frames),
       tok_mask_shape.data(), tok_mask_shape.size());
 
+  const auto encoder_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   Ort::Value audio_features = model_->ForwardEncoder(
       std::move(conv_output), std::move(feature_attention_mask));
+  if (profile) {
+    profile->encoder_ms += ProfileElapsedMs(encoder_start);
+  }
 
   if (config_.model_config.debug) {
     SHERPA_ONNX_LOGE(
@@ -1105,9 +1323,16 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
   }
 
   OfflineRecognitionResult r =
-      GenerateText(std::move(audio_features), valid_frames, stream);
+      GenerateText(std::move(audio_features), valid_frames, stream, profile);
 
+  const auto homophone_start =
+      profile ? ProfileClock::now() : ProfileClock::time_point{};
   r.text = ApplyHomophoneReplacer(std::move(r.text));
+  if (profile) {
+    profile->homophone_replace_ms += ProfileElapsedMs(homophone_start);
+    profile->total_ms = ProfileElapsedMs(total_start);
+    r.profile_json = profile->AsJson();
+  }
 
   stream->SetResult(r);
 }

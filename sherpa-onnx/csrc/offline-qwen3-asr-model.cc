@@ -15,6 +15,12 @@
 #include <utility>
 #include <vector>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 #if __ANDROID_API__ >= 9
 #include "android/asset_manager.h"
 #include "android/asset_manager_jni.h"
@@ -116,6 +122,95 @@ inline bool IsCudaProvider(const std::string &provider) {
   return p == "cuda" || (p.size() > 4 && p.find("cuda") == 0);
 }
 
+class CudaRuntime {
+ public:
+  enum MemcpyKind {
+    kHostToDevice = 1,
+    kDeviceToHost = 2,
+    kDeviceToDevice = 3,
+  };
+
+  static const CudaRuntime &Get() {
+    static const CudaRuntime api;
+    return api;
+  }
+
+  void Memcpy(void *dst, const void *src, size_t bytes, MemcpyKind kind,
+              const char *operation) const {
+    const int rc = memcpy_(dst, src, bytes, static_cast<int>(kind));
+    Check(rc, operation);
+  }
+
+  void Memset(void *dst, int value, size_t bytes,
+              const char *operation) const {
+    const int rc = memset_(dst, value, bytes);
+    Check(rc, operation);
+  }
+
+ private:
+  using MemcpyFn = int (*)(void *, const void *, size_t, int);
+  using MemsetFn = int (*)(void *, int, size_t);
+  using GetErrorStringFn = const char *(*)(int);
+
+  CudaRuntime() {
+#if defined(_WIN32)
+    constexpr const char *kLibraries[] = {
+        "cudart64_13.dll", "cudart64_12.dll", "cudart64_110.dll"};
+    HMODULE handle = nullptr;
+    for (const char *library : kLibraries) {
+      handle = GetModuleHandleA(library);
+      if (!handle) {
+        handle = LoadLibraryA(library);
+      }
+      if (handle) break;
+    }
+    if (handle) {
+      memcpy_ = reinterpret_cast<MemcpyFn>(
+          GetProcAddress(handle, "cudaMemcpy"));
+      memset_ = reinterpret_cast<MemsetFn>(
+          GetProcAddress(handle, "cudaMemset"));
+      get_error_string_ = reinterpret_cast<GetErrorStringFn>(
+          GetProcAddress(handle, "cudaGetErrorString"));
+    }
+#else
+    constexpr const char *kLibraries[] = {
+        "libcudart.so", "libcudart.so.13", "libcudart.so.12",
+        "libcudart.so.11.0", "libcudart.so.10.2"};
+    void *handle = nullptr;
+    for (const char *library : kLibraries) {
+      handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
+      if (handle) break;
+    }
+    if (handle) {
+      memcpy_ =
+          reinterpret_cast<MemcpyFn>(dlsym(handle, "cudaMemcpy"));
+      memset_ =
+          reinterpret_cast<MemsetFn>(dlsym(handle, "cudaMemset"));
+      get_error_string_ = reinterpret_cast<GetErrorStringFn>(
+          dlsym(handle, "cudaGetErrorString"));
+    }
+#endif
+
+    if (!memcpy_ || !memset_) {
+      SHERPA_ONNX_LOGE(
+          "Failed to load cudaMemcpy/cudaMemset from the CUDA runtime");
+      SHERPA_ONNX_EXIT(-1);
+    }
+  }
+
+  void Check(int rc, const char *operation) const {
+    if (rc == 0) return;
+    const char *message =
+        get_error_string_ ? get_error_string_(rc) : "unknown CUDA error";
+    SHERPA_ONNX_LOGE("%s failed: CUDA error %d (%s)", operation, rc, message);
+    SHERPA_ONNX_EXIT(-1);
+  }
+
+  MemcpyFn memcpy_ = nullptr;
+  MemsetFn memset_ = nullptr;
+  GetErrorStringFn get_error_string_ = nullptr;
+};
+
 }  // namespace
 
 class OfflineQwen3ASRModel::Impl {
@@ -201,7 +296,61 @@ class OfflineQwen3ASRModel::Impl {
     if (use_cuda_iobinding_) {
       cuda_mem_info_ = std::make_unique<Ort::MemoryInfo>(
           "Cuda", OrtDeviceAllocator, 0, OrtMemTypeDefault);
+      cuda_allocator_ = std::make_unique<Ort::Allocator>(
+          *decoder_sess_, *cuda_mem_info_);
+      use_cuda_device_cache_ = true;
     }
+  }
+
+  void ZeroTensor(Ort::Value *tensor, const std::vector<int64_t> &shape,
+                  ONNXTensorElementDataType elem_type) const {
+    const size_t bytes =
+        NumelFromShape(shape) * ElemBytesFromTensorType(elem_type);
+    if (bytes == 0) {
+      return;
+    }
+
+    if (!use_cuda_device_cache_) {
+      std::memset(tensor->GetTensorMutableData<void>(), 0, bytes);
+      return;
+    }
+
+    CudaRuntime::Get().Memset(tensor->GetTensorMutableData<void>(), 0, bytes,
+                              "Initialize CUDA KV cache");
+  }
+
+  Ort::Value CopyLastLogitsRowToCpu(Ort::Value logits) {
+    auto info = logits.GetTensorTypeAndShapeInfo();
+    const auto shape = info.GetShape();
+    if (shape.size() != 3 || shape[0] <= 0 || shape[1] <= 0 ||
+        shape[2] <= 0) {
+      SHERPA_ONNX_LOGE(
+          "CopyLastLogitsRowToCpu: expected logits shape [B,T,V]");
+      SHERPA_ONNX_EXIT(-1);
+    }
+
+    const auto elem_type = static_cast<ONNXTensorElementDataType>(
+        info.GetElementType());
+    const size_t elem_bytes = ElemBytesFromTensorType(elem_type);
+    const size_t row_bytes = static_cast<size_t>(shape[2]) * elem_bytes;
+    const std::vector<int64_t> output_shape{shape[0], 1, shape[2]};
+    Ort::Value output =
+        AllocTensorByElemType(allocator_, output_shape, elem_type);
+    auto *src_base =
+        static_cast<uint8_t *>(logits.GetTensorMutableData<void>());
+    auto *dst_base =
+        static_cast<uint8_t *>(output.GetTensorMutableData<void>());
+
+    for (int64_t b = 0; b < shape[0]; ++b) {
+      const size_t src_row =
+          static_cast<size_t>(b * shape[1] + shape[1] - 1);
+      CudaRuntime::Get().Memcpy(
+          dst_base + static_cast<size_t>(b) * row_bytes,
+          src_base + src_row * row_bytes, row_bytes,
+          CudaRuntime::kDeviceToHost, "Copy last logits row to CPU");
+    }
+
+    return output;
   }
 
   void InitSessionIo(Ort::Session *sess, std::vector<std::string> *input_names,
@@ -468,9 +617,10 @@ class OfflineQwen3ASRModel::Impl {
       for (size_t i = 0; i < inputs.size(); ++i) {
         binding.BindInput(input_names_ptr[i], inputs[i]);
       }
-      binding.BindOutput(decoder_output_names_ptr_[0], cpu_mem_info_);
-      for (size_t i = 1; i < decoder_output_names_ptr_.size(); ++i) {
-        binding.BindOutput(decoder_output_names_ptr_[i], cpu_mem_info_);
+      for (size_t i = 0; i < decoder_output_names_ptr_.size(); ++i) {
+        binding.BindOutput(
+            decoder_output_names_ptr_[i],
+            use_cuda_device_cache_ ? *cuda_mem_info_ : cpu_mem_info_);
       }
       binding.SynchronizeInputs();
       decoder_sess_->Run(Ort::RunOptions{nullptr}, binding);
@@ -487,7 +637,9 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_EXIT(-1);
     }
 
-    Ort::Value logits = std::move(outputs[0]);
+    Ort::Value logits = use_cuda_device_cache_
+                            ? CopyLastLogitsRowToCpu(std::move(outputs[0]))
+                            : std::move(outputs[0]);
 
     if (!logits.IsTensor()) {
       SHERPA_ONNX_LOGE("ForwardLLM: logits is not a tensor");
@@ -550,29 +702,21 @@ class OfflineQwen3ASRModel::Impl {
     size_t value_numel = NumelFromShape(value_shape);
 
     for (int32_t i = 0; i < num_layers_; ++i) {
+      OrtAllocator *cache_allocator =
+          static_cast<OrtAllocator *>(allocator_);
+      if (use_cuda_device_cache_) {
+        cache_allocator = static_cast<OrtAllocator *>(*cuda_allocator_);
+      }
       Ort::Value key_tensor =
-          AllocTensorByElemType(allocator_, key_shape, kv_in_type_);
+          AllocTensorByElemType(cache_allocator, key_shape, kv_in_type_);
       Ort::Value value_tensor =
-          AllocTensorByElemType(allocator_, value_shape, kv_in_type_v_);
+          AllocTensorByElemType(cache_allocator, value_shape, kv_in_type_v_);
 
       if (key_numel > 0) {
-        if (kv_in_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-          std::memset(key_tensor.GetTensorMutableData<float>(), 0,
-                      key_numel * sizeof(float));
-        } else {
-          std::memset(key_tensor.GetTensorMutableData<uint16_t>(), 0,
-                      key_numel * sizeof(uint16_t));
-        }
+        ZeroTensor(&key_tensor, key_shape, kv_in_type_);
       }
-
       if (value_numel > 0) {
-        if (kv_in_type_v_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
-          std::memset(value_tensor.GetTensorMutableData<float>(), 0,
-                      value_numel * sizeof(float));
-        } else {
-          std::memset(value_tensor.GetTensorMutableData<uint16_t>(), 0,
-                      value_numel * sizeof(uint16_t));
-        }
+        ZeroTensor(&value_tensor, value_shape, kv_in_type_v_);
       }
 
       kv_cache.emplace_back(std::move(key_tensor), std::move(value_tensor));
@@ -737,18 +881,42 @@ class OfflineQwen3ASRModel::Impl {
 
         uint8_t *dst_k_ptr = static_cast<uint8_t *>(dst_k) + dst_k_off;
         uint8_t *dst_v_ptr = static_cast<uint8_t *>(dst_v) + dst_v_off;
-        const uint8_t *src_k_ptr =
-            static_cast<const uint8_t *>(src_k) + src_k_off;
-        const uint8_t *src_v_ptr =
-            static_cast<const uint8_t *>(src_v) + src_v_off;
+        uint8_t *src_k_ptr =
+            static_cast<uint8_t *>(const_cast<void *>(src_k)) + src_k_off;
+        uint8_t *src_v_ptr =
+            static_cast<uint8_t *>(const_cast<void *>(src_v)) + src_v_off;
 
-        std::memcpy(dst_k_ptr, src_k_ptr, copy_k_bytes);
-        std::memcpy(dst_v_ptr, src_v_ptr, copy_v_bytes);
+        if (use_cuda_device_cache_) {
+          CudaRuntime::Get().Memcpy(
+              dst_k_ptr, src_k_ptr, copy_k_bytes,
+              CudaRuntime::kDeviceToDevice, "Update CUDA key cache");
+          CudaRuntime::Get().Memcpy(
+              dst_v_ptr, src_v_ptr, copy_v_bytes,
+              CudaRuntime::kDeviceToDevice, "Update CUDA value cache");
+        } else {
+          std::memcpy(dst_k_ptr, src_k_ptr, copy_k_bytes);
+          std::memcpy(dst_v_ptr, src_v_ptr, copy_v_bytes);
+        }
       }
     }
   }
 
   int32_t GetMaxTotalLen() const { return max_total_len_; }
+  bool UsesCudaDeviceCache() const { return use_cuda_device_cache_; }
+
+  size_t GetKvCacheBytes(int64_t batch) const {
+    if (batch <= 0 || past_key_shape_tpl_.size() < 4) {
+      return 0;
+    }
+    const std::vector<int64_t> shape{
+        batch, static_cast<int64_t>(max_total_len_),
+        past_key_shape_tpl_[2], past_key_shape_tpl_[3]};
+    const size_t numel = NumelFromShape(shape);
+    return static_cast<size_t>(num_layers_) * numel *
+           (ElemBytesFromTensorType(kv_in_type_) +
+            ElemBytesFromTensorType(kv_in_type_v_));
+  }
+
   OrtAllocator *Allocator() { return allocator_; }
 
  private:
@@ -786,9 +954,11 @@ class OfflineQwen3ASRModel::Impl {
   Ort::AllocatorWithDefaultOptions allocator_;
   Ort::MemoryInfo cpu_mem_info_;
   std::unique_ptr<Ort::MemoryInfo> cuda_mem_info_;
+  std::unique_ptr<Ort::Allocator> cuda_allocator_;
 
   bool is_cpu_provider_ = true;
   bool use_cuda_iobinding_ = false;
+  bool use_cuda_device_cache_ = false;
 
   int32_t num_layers_ = 0;
   int32_t max_total_len_ = 0;
@@ -840,6 +1010,14 @@ void OfflineQwen3ASRModel::ApplyKvDeltaInplace(
 
 int32_t OfflineQwen3ASRModel::GetMaxTotalLen() const {
   return impl_->GetMaxTotalLen();
+}
+
+bool OfflineQwen3ASRModel::UsesCudaDeviceCache() const {
+  return impl_->UsesCudaDeviceCache();
+}
+
+size_t OfflineQwen3ASRModel::GetKvCacheBytes(int64_t batch) const {
+  return impl_->GetKvCacheBytes(batch);
 }
 
 OrtAllocator *OfflineQwen3ASRModel::Allocator() const {

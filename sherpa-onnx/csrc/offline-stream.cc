@@ -503,6 +503,10 @@ std::string OfflineRecognitionResult::AsJsonString() const {
     os << "]";
   }
 
+  if (!profile_json.empty()) {
+    os << ", \"qwen_profile\": " << profile_json;
+  }
+
   os << "}";
 
   return os.str();

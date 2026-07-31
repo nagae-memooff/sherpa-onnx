@@ -51,9 +51,9 @@ class OfflineQwen3ASRModel {
    * @param cache_position  A tensor of shape (T,) containing cache positions,
    * int64.
    * @param cache_kv  Fixed-size KV cache, vector of (key, value) pairs.
-   * @return Return tuple (logits, kv_outputs...). Logits shape (N, T,
-   * vocab_size), float32. kv_outputs is a vector of (key_delta, value_delta)
-   * pairs for each layer.
+   * @return Return tuple (logits, kv_outputs...). On CUDA, only the last
+   * logits row is copied to CPU and has shape (N, 1, vocab_size). kv_outputs
+   * remain on CUDA. Other providers retain their original output layout.
    */
   std::pair<Ort::Value, std::vector<std::pair<Ort::Value, Ort::Value>>>
   ForwardLLM(Ort::Value input_ids, Ort::Value audio_features,
@@ -86,6 +86,14 @@ class OfflineQwen3ASRModel {
   /** Return the maximum total sequence length (from metadata or config)
    */
   int32_t GetMaxTotalLen() const;
+
+  /** Return true when the decoder uses GPU-resident KV cache and output
+   * tensors.
+   */
+  bool UsesCudaDeviceCache() const;
+
+  /** Return the fixed KV cache size in bytes for the given batch size. */
+  size_t GetKvCacheBytes(int64_t batch) const;
 
   /** Return an allocator for allocating memory
    */

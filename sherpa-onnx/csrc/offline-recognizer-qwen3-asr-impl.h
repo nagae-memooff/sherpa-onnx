@@ -20,6 +20,8 @@
 
 namespace sherpa_onnx {
 
+struct Qwen3DecodeProfile;
+
 class OfflineRecognizerQwen3ASRImpl : public OfflineRecognizerImpl {
  public:
   explicit OfflineRecognizerQwen3ASRImpl(const OfflineRecognizerConfig &config);
@@ -54,7 +56,8 @@ class OfflineRecognizerQwen3ASRImpl : public OfflineRecognizerImpl {
 
   OfflineRecognitionResult GenerateText(Ort::Value audio_features,
                                         int32_t audio_token_len,
-                                        OfflineStream *stream) const;
+                                        OfflineStream *stream,
+                                        Qwen3DecodeProfile *profile) const;
 
   void Decode(OfflineStream *stream) const;
 

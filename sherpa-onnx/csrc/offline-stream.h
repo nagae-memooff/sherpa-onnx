@@ -55,6 +55,10 @@ struct OfflineRecognitionResult {
   std::vector<float> segment_durations;    // duration of each segment
   std::vector<std::string> segment_texts;  // text of each segment
 
+  // Internal per-decode profiling payload. It is empty unless explicitly
+  // enabled through OfflineStream::SetOption("profile", "1").
+  std::string profile_json;
+
   std::string AsJsonString() const;
 };
 
