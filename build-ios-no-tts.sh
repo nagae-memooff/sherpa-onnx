@@ -5,17 +5,15 @@ set -e
 dir=build-ios-no-tts
 mkdir -p $dir
 cd $dir
-onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.27.0}
+onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.27.1}
 onnxruntime_dir=ios-onnxruntime/$onnxruntime_version
 
 if [ ! -f $onnxruntime_dir/onnxruntime.xcframework/ios-arm64/onnxruntime.framework/onnxruntime ]; then
   mkdir -p $onnxruntime_dir
   pushd $onnxruntime_dir
-  wget -c https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${onnxruntime_version}/onnxruntime-ios-static-xcframework-${onnxruntime_version}.zip
-  unzip onnxruntime-ios-static-xcframework-${onnxruntime_version}.zip
-  rm onnxruntime-ios-static-xcframework-${onnxruntime_version}.zip
-  mv onnxruntime-ios-static-xcframework-${onnxruntime_version}/onnxruntime.xcframework .
-  rmdir onnxruntime-ios-static-xcframework-${onnxruntime_version}
+  wget -c https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${onnxruntime_version}/onnxruntime-ios-static-xcframework-${onnxruntime_version}.xcframework.zip
+  unzip onnxruntime-ios-static-xcframework-${onnxruntime_version}.xcframework.zip
+  rm onnxruntime-ios-static-xcframework-${onnxruntime_version}.xcframework.zip
   cd ..
   ln -sf $onnxruntime_version/onnxruntime.xcframework .
   popd
@@ -50,6 +48,7 @@ cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=OFF \
   -DSHERPA_ONNX_ENABLE_PYTHON=OFF \
+  -DSHERPA_ONNX_ENABLE_BINARY=OFF \
   -DSHERPA_ONNX_ENABLE_TESTS=OFF \
   -DSHERPA_ONNX_ENABLE_CHECK=OFF \
   -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
@@ -59,7 +58,7 @@ cmake \
   -DDEPLOYMENT_TARGET=13.0 \
   -B build/simulator_x86_64
 
-cmake --build build/simulator_x86_64 -j 4 --verbose
+cmake --build build/simulator_x86_64 -j 4
 
 echo "Building for simulator (arm64)"
 
@@ -79,6 +78,7 @@ cmake \
   -DCMAKE_INSTALL_PREFIX=./install \
   -DBUILD_SHARED_LIBS=OFF \
   -DSHERPA_ONNX_ENABLE_PYTHON=OFF \
+  -DSHERPA_ONNX_ENABLE_BINARY=OFF \
   -DSHERPA_ONNX_ENABLE_TESTS=OFF \
   -DSHERPA_ONNX_ENABLE_CHECK=OFF \
   -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
@@ -88,7 +88,7 @@ cmake \
   -DDEPLOYMENT_TARGET=13.0 \
   -B build/simulator_arm64
 
-cmake --build build/simulator_arm64 -j 4 --verbose
+cmake --build build/simulator_arm64 -j 4
 
 echo "Building for arm64"
 
@@ -112,6 +112,7 @@ cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=OFF \
   -DSHERPA_ONNX_ENABLE_PYTHON=OFF \
+  -DSHERPA_ONNX_ENABLE_BINARY=OFF \
   -DSHERPA_ONNX_ENABLE_TESTS=OFF \
   -DSHERPA_ONNX_ENABLE_CHECK=OFF \
   -DSHERPA_ONNX_ENABLE_PORTAUDIO=OFF \
@@ -159,20 +160,73 @@ libtool -static -o build/os64/sherpa-onnx.a \
   build/os64/lib/libkaldi-decoder-core.a \
   build/os64/lib/libssentencepiece_core.a
 
+# Rename to match the shared library naming convention
+mv -v build/os64/sherpa-onnx.a build/os64/libsherpa-onnx-c-api.a
+mv -v build/simulator/sherpa-onnx.a build/simulator/libsherpa-onnx-c-api.a
+
 rm -rf sherpa-onnx.xcframework
 
+# Create framework bundles (like onnxruntime does) so SPM can resolve the module
+create_framework() {
+  local lib_path=$1
+  local output_dir=$2
+
+  local fw_dir=$output_dir/SherpaOnnxC.framework
+  rm -rf $fw_dir
+
+  mkdir -p $fw_dir/Headers/sherpa-onnx/c-api
+  mkdir -p $fw_dir/Modules
+
+  cp $lib_path $fw_dir/SherpaOnnxC
+  cp install/include/sherpa-onnx/c-api/c-api.h $fw_dir/Headers/sherpa-onnx/c-api/
+
+  cat > $fw_dir/Modules/module.modulemap << 'MEOF'
+framework module SherpaOnnxC {
+  header "sherpa-onnx/c-api/c-api.h"
+  export *
+}
+MEOF
+
+  cat > $fw_dir/Info.plist << 'PEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.k2-fsa.sherpa-onnx</string>
+  <key>CFBundleName</key>
+  <string>SherpaOnnxC</string>
+  <key>CFBundlePackageType</key>
+  <string>FMWK</string>
+  <key>CFBundleExecutable</key>
+  <string>SherpaOnnxC</string>
+  <key>CFBundleVersion</key>
+  <string>20260810</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.13.5</string>
+  <key>MinimumOSVersion</key>
+  <string>13.0</string>
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>iPhoneOS</string>
+  </array>
+</dict>
+</plist>
+PEOF
+}
+
+create_framework build/os64/libsherpa-onnx-c-api.a build/os64
+create_framework build/simulator/libsherpa-onnx-c-api.a build/simulator
+
 xcodebuild -create-xcframework \
-      -library "build/os64/sherpa-onnx.a" \
-      -library "build/simulator/sherpa-onnx.a" \
-      -output sherpa-onnx.xcframework
+  -framework "build/os64/SherpaOnnxC.framework" \
+  -framework "build/simulator/SherpaOnnxC.framework" \
+  -output sherpa-onnx.xcframework
 
-# Copy Headers
-mkdir -p sherpa-onnx.xcframework/Headers
-cp -av install/include/* sherpa-onnx.xcframework/Headers
+SHERPA_ONNX_VERSION=v$(grep "SHERPA_ONNX_VERSION" ../CMakeLists.txt | cut -d " " -f 2 | cut -d '"' -f 2)
 
-pushd sherpa-onnx.xcframework/ios-arm64_x86_64-simulator
-ln -s sherpa-onnx.a libsherpa-onnx.a
-popd
+rm -f sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-no-tts.xcframework.zip
+zip -r -y sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-no-tts.xcframework.zip sherpa-onnx.xcframework
 
-pushd sherpa-onnx.xcframework/ios-arm64
-ln -s sherpa-onnx.a libsherpa-onnx.a
+echo "Checksum:"
+swift package compute-checksum sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-no-tts.xcframework.zip | tee checksum.txt

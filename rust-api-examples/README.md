@@ -91,6 +91,7 @@ in your own Cargo project, see
 | 46 | [zipformer_transducer_simulate_streaming_microphone](#example-46-simulated-streaming-asr-with-zipformer-transducer-japanese-and-vad-from-microphone) | Simulated streaming ASR with Zipformer transducer (Japanese) and VAD from microphone |
 | 47 | [qwen3_asr_simulate_streaming_microphone](#example-47-simulated-streaming-asr-with-qwen3-asr-and-vad-from-microphone) | Simulated streaming ASR with Qwen3 ASR and VAD from microphone |
 | 48 | [whisper](#example-48-asr-with-non-streaming-whisper) | Non-streaming ASR with Whisper (multilingual) |
+| 51 | [paraformer](#example-51-asr-with-non-streaming-paraformer) | Non-streaming ASR with Paraformer |
 
 ## Run it
 
@@ -422,3 +423,20 @@ Qwen3 ASR recognizer on each detected segment.
 ```bash
 ./run-whisper.sh
 ```
+
+### Example 49: ASR with non-streaming FunASR Nano
+
+```bash
+./run-funasr-nano.sh
+```
+
+### Example 50: Remove silences from a file using ten-vad
+
+```bash
+./run-ten-vad-remove-silence.sh
+```
+
+### Example 51: ASR with non-streaming Paraformer
+
+```bash
+./run-paraformer.sh

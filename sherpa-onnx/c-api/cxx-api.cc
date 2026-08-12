@@ -20,6 +20,7 @@ static void FillSpeechDenoiserModelConfig(
   memset(dst, 0, sizeof(*dst));
   dst->gtcrn.model = src.gtcrn.model.c_str();
   dst->dpdfnet.model = src.dpdfnet.model.c_str();
+  dst->dpdfnet.attenuation_limit_db = src.dpdfnet.attenuation_limit_db;
   dst->num_threads = src.num_threads;
   dst->provider = src.provider.c_str();
   dst->debug = src.debug;
@@ -1051,6 +1052,10 @@ std::string GetVersionStr() { return SherpaOnnxGetVersionStr(); }
 std::string GetGitSha1() { return SherpaOnnxGetGitSha1(); }
 
 std::string GetGitDate() { return SherpaOnnxGetGitDate(); }
+
+std::string GetOnnxruntimeVersionStr() {
+  return SherpaOnnxGetOnnxruntimeVersionStr();
+}
 
 bool FileExists(const std::string &filename) {
   return SherpaOnnxFileExists(filename.c_str());

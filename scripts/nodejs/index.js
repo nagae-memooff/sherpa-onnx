@@ -8,7 +8,7 @@
 const wasmModule = {};
 require('./sherpa-onnx-wasm-nodejs.js')(wasmModule);
 const sherpa_onnx_asr = require('./sherpa-onnx-asr.js');
-const sherpa_onnx_tts = require('./sherpa-onnx-tts.node.js');
+const sherpa_onnx_tts = require('./sherpa-onnx-tts.js');
 const sherpa_onnx_kws = require('./sherpa-onnx-kws.js');
 const sherpa_onnx_wave = require('./sherpa-onnx-wave.js');
 const sherpa_onnx_vad = require('./sherpa-onnx-vad.js');
@@ -94,6 +94,12 @@ function getGitDate() {
   return wasmModule.UTF8ToString(v);
 }
 
+// Return the onnxruntime version string used by the library.
+function getOnnxruntimeVersion() {
+  const v = wasmModule._SherpaOnnxGetOnnxruntimeVersionStr();
+  return wasmModule.UTF8ToString(v);
+}
+
 // Note: online means streaming and offline means non-streaming here.
 // Both of them don't require internet connection.
 module.exports = {
@@ -111,7 +117,8 @@ module.exports = {
   createOfflineSpeakerDiarization,
   createOfflineSpeechDenoiser,
   createOnlineSpeechDenoiser,
-  version: getVersion(),
-  gitSha1: getGitSha1(),
-  gitDate: getGitDate(),
+  version : getVersion(),
+  gitSha1 : getGitSha1(),
+  gitDate : getGitDate(),
+  onnxruntimeVersion : getOnnxruntimeVersion(),
 };

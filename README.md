@@ -496,6 +496,45 @@ cross-platform Node.js microphone streaming library with prebuilt native binarie
 >
 > It natively integrates sherpa-onnx to power three offline ASR engines — FunASR, Qwen3-ASR, and FireRedASR — delivering high-accuracy Chinese and multilingual speech recognition entirely on-device, with no file uploads required.
 
+### [Fono](https://github.com/bogdanr/fono)
+
+> Talk to your computer. Fono is an open-source (GPL-3.0), complete voice-AI
+> stack (speech-to-text, text-to-speech, a local LLM, wake word, speaker ID) in
+> one small binary for the Linux, macOS, and Windows desktop. Press a key and
+> speak: it types into any app, answers as a voice assistant, or drives a coding
+> agent.
+
+It uses sherpa-onnx's Supertonic TTS models for text-to-speech, with the
+Supertonic text frontend ported to Rust. See also
+[#3750](https://github.com/k2-fsa/sherpa-onnx/pull/3750), which fixes dropped
+diacritics in the Supertonic frontend for Romanian, Czech, Polish, Hungarian,
+Turkish, Vietnamese, and other non-English Latin-script languages.
+
+### [Domia](https://github.com/domia-ai/domia-core)
+
+> Domia is an open-source local AI companion you talk to, living entirely on
+> hardware you own. Each Domia is its own character, with a distinct
+> personality, voice, emotional state, and memory of you and its place — and it
+> acts, not just talks: skills connect it to the real world over MCP, Home
+> Assistant included. Domia nodes form a local peer-to-peer mesh that shares
+> speech and reasoning compute, while room satellites bring each companion into
+> the spaces where you live without giving up its identity. No cloud, no
+> accounts, and no data leaving your network.
+
+Domia runs sherpa-onnx in-process for keyword spotting, voice activity
+detection, streaming and offline speech recognition, and text-to-speech.
+Speech engines and models are selected through per-companion configuration,
+making it easy to match supported sherpa-onnx models to different hardware.
+
+### [qwen-audio-agent](https://github.com/QwenAudio/qwen-audio-agent)
+
+> A realtime full-duplex voice runtime for AI coding agents
+> (Claude Code, Codex, OpenCode, and other ACP agents).
+> It uses sherpa-onnx keyword spotting with the 3M-parameter
+> zh-en transducer model to implement a local voice wake word:
+> the app sleeps on idle but keeps the microphone open,
+> and the wake phrase brings the session back with no cloud calls.
+
 [silero-vad]: https://github.com/snakers4/silero-vad
 [Raspberry Pi]: https://www.raspberrypi.com/
 [RV1126]: https://www.rock-chips.com/uploads/pdf/2022.8.26/191/RV1126%20Brief%20Datasheet.pdf

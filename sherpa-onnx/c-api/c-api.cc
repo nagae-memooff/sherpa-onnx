@@ -51,9 +51,29 @@
 #include "sherpa-onnx/csrc/offline-speaker-diarization.h"
 #endif
 
+#define SHERPA_ONNX_OR(x, y) (x ? x : y)
+
 const char *SherpaOnnxGetVersionStr() { return sherpa_onnx::GetVersionStr(); }
 const char *SherpaOnnxGetGitSha1() { return sherpa_onnx::GetGitSha1(); }
 const char *SherpaOnnxGetGitDate() { return sherpa_onnx::GetGitDate(); }
+const char *SherpaOnnxGetOnnxruntimeVersionStr() {
+  return sherpa_onnx::GetOnnxruntimeVersionStr();
+}
+
+// On WASM builds, multi-threading is not supported. Clamp num_threads to 1.
+static int32_t GetNumThreads(int32_t num_threads) {
+  int32_t n = SHERPA_ONNX_OR(num_threads, 1);
+#if SHERPA_ONNX_ENABLE_WASM
+  if (n > 1) {
+    SHERPA_ONNX_LOGE(
+        "WASM does not support multi-threading. "
+        "Changing num_threads from %d to 1.",
+        n);
+    n = 1;
+  }
+#endif
+  return n;
+}
 
 int32_t SherpaOnnxSetRunLogFilePath(const char *path) {
   return sherpa_onnx::SetRunLogFilePath(path) ? 1 : 0;
@@ -82,8 +102,6 @@ struct SherpaOnnxOnlineStream {
 struct SherpaOnnxDisplay {
   std::unique_ptr<sherpa_onnx::Display> impl;
 };
-
-#define SHERPA_ONNX_OR(x, y) (x ? x : y)
 
 static sherpa_onnx::OnlineRecognizerConfig GetOnlineRecognizerConfig(
     const SherpaOnnxOnlineRecognizerConfig *config) {
@@ -124,7 +142,7 @@ static sherpa_onnx::OnlineRecognizerConfig GetOnlineRecognizerConfig(
       SHERPA_ONNX_OR(config->model_config.t_one_ctc.model, "");
 
   recognizer_config.model_config.num_threads =
-      SHERPA_ONNX_OR(config->model_config.num_threads, 1);
+      GetNumThreads(config->model_config.num_threads);
   recognizer_config.model_config.provider_config.provider =
       SHERPA_ONNX_OR(config->model_config.provider, "cpu");
 
@@ -494,7 +512,7 @@ static sherpa_onnx::OfflineRecognizerConfig GetOfflineRecognizerConfig(
   recognizer_config.model_config.tokens =
       SHERPA_ONNX_OR(config->model_config.tokens, "");
   recognizer_config.model_config.num_threads =
-      SHERPA_ONNX_OR(config->model_config.num_threads, 1);
+      GetNumThreads(config->model_config.num_threads);
   recognizer_config.model_config.debug = config->model_config.debug;
   recognizer_config.model_config.provider =
       SHERPA_ONNX_OR(config->model_config.provider, "cpu");
@@ -1008,7 +1026,7 @@ static sherpa_onnx::KeywordSpotterConfig GetKeywordSpotterConfig(
   }
 
   spotter_config.model_config.num_threads =
-      SHERPA_ONNX_OR(config->model_config.num_threads, 1);
+      GetNumThreads(config->model_config.num_threads);
   spotter_config.model_config.provider_config.provider =
       SHERPA_ONNX_OR(config->model_config.provider, "cpu");
   if (spotter_config.model_config.provider_config.provider.empty()) {
@@ -1314,7 +1332,7 @@ static sherpa_onnx::VadModelConfig GetVadModelConfig(
       SHERPA_ONNX_OR(config->ten_vad.max_speech_duration, 20);
 
   vad_config.sample_rate = SHERPA_ONNX_OR(config->sample_rate, 16000);
-  vad_config.num_threads = SHERPA_ONNX_OR(config->num_threads, 1);
+  vad_config.num_threads = GetNumThreads(config->num_threads);
   vad_config.provider = SHERPA_ONNX_OR(config->provider, "cpu");
   if (vad_config.provider.empty()) {
     vad_config.provider = "cpu";
@@ -1590,7 +1608,7 @@ static sherpa_onnx::OfflineTtsConfig GetOfflineTtsConfig(
   tts_config.model.supertonic.voice_style =
       SHERPA_ONNX_OR(config->model.supertonic.voice_style, "");
 
-  tts_config.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  tts_config.model.num_threads = GetNumThreads(config->model.num_threads);
   tts_config.model.debug = config->model.debug;
   tts_config.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
   if (tts_config.model.provider.empty()) {
@@ -2153,7 +2171,7 @@ SherpaOnnxCreateSpokenLanguageIdentification(
   slid_config.whisper.decoder = SHERPA_ONNX_OR(config->whisper.decoder, "");
   slid_config.whisper.tail_paddings =
       SHERPA_ONNX_OR(config->whisper.tail_paddings, -1);
-  slid_config.num_threads = SHERPA_ONNX_OR(config->num_threads, 1);
+  slid_config.num_threads = GetNumThreads(config->num_threads);
   slid_config.debug = config->debug;
   slid_config.provider = SHERPA_ONNX_OR(config->provider, "cpu");
   if (slid_config.provider.empty()) {
@@ -2227,7 +2245,7 @@ GetSpeakerEmbeddingExtractorConfig(
   sherpa_onnx::SpeakerEmbeddingExtractorConfig c;
   c.model = SHERPA_ONNX_OR(config->model, "");
 
-  c.num_threads = SHERPA_ONNX_OR(config->num_threads, 1);
+  c.num_threads = GetNumThreads(config->num_threads);
   c.debug = config->debug;
   c.provider = SHERPA_ONNX_OR(config->provider, "cpu");
   if (c.provider.empty()) {
@@ -2484,7 +2502,7 @@ const SherpaOnnxAudioTagging *SherpaOnnxCreateAudioTagging(
   sherpa_onnx::AudioTaggingConfig ac;
   ac.model.zipformer.model = SHERPA_ONNX_OR(config->model.zipformer.model, "");
   ac.model.ced = SHERPA_ONNX_OR(config->model.ced, "");
-  ac.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  ac.model.num_threads = GetNumThreads(config->model.num_threads);
   ac.model.debug = config->model.debug;
   ac.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
   if (ac.model.provider.empty()) {
@@ -2579,7 +2597,7 @@ static sherpa_onnx::OfflinePunctuationConfig GetOfflinePunctuationConfig(
     const SherpaOnnxOfflinePunctuationConfig *config) {
   sherpa_onnx::OfflinePunctuationConfig c;
   c.model.ct_transformer = SHERPA_ONNX_OR(config->model.ct_transformer, "");
-  c.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  c.model.num_threads = GetNumThreads(config->model.num_threads);
   c.model.debug = config->model.debug;
   c.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
   if (c.model.provider.empty()) {
@@ -2651,7 +2669,7 @@ static sherpa_onnx::OnlinePunctuationConfig GetOnlinePunctuationConfig(
   punctuation_config.model.bpe_vocab =
       SHERPA_ONNX_OR(config->model.bpe_vocab, "");
   punctuation_config.model.num_threads =
-      SHERPA_ONNX_OR(config->model.num_threads, 1);
+      GetNumThreads(config->model.num_threads);
   punctuation_config.model.debug = config->model.debug;
   punctuation_config.model.provider =
       SHERPA_ONNX_OR(config->model.provider, "cpu");
@@ -2821,10 +2839,12 @@ static sherpa_onnx::OfflineSpeechDenoiserConfig GetOfflineSpeechDenoiserConfig(
     const SherpaOnnxOfflineSpeechDenoiserConfig *config) {
   sherpa_onnx::OfflineSpeechDenoiserConfig c;
   c.model.gtcrn.model = SHERPA_ONNX_OR(config->model.gtcrn.model, "");
-  c.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  c.model.num_threads = GetNumThreads(config->model.num_threads);
   c.model.debug = config->model.debug;
   c.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
   c.model.dpdfnet.model = SHERPA_ONNX_OR(config->model.dpdfnet.model, "");
+  c.model.dpdfnet.attenuation_limit_db =
+      config->model.dpdfnet.attenuation_limit_db;
 
   if (c.model.debug) {
 #if __OHOS__
@@ -2909,7 +2929,7 @@ GetOfflineSourceSeparationConfig(
   c.model.spleeter.accompaniment =
       SHERPA_ONNX_OR(config->model.spleeter.accompaniment, "");
   c.model.uvr.model = SHERPA_ONNX_OR(config->model.uvr.model, "");
-  c.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  c.model.num_threads = GetNumThreads(config->model.num_threads);
   c.model.debug = config->model.debug;
   c.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
 
@@ -3025,7 +3045,7 @@ static sherpa_onnx::OnlineSpeechDenoiserConfig GetOnlineSpeechDenoiserConfig(
     const SherpaOnnxOnlineSpeechDenoiserConfig *config) {
   sherpa_onnx::OnlineSpeechDenoiserConfig c;
   c.model.gtcrn.model = SHERPA_ONNX_OR(config->model.gtcrn.model, "");
-  c.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  c.model.num_threads = GetNumThreads(config->model.num_threads);
   c.model.debug = config->model.debug;
   c.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
   c.model.dpdfnet.model = SHERPA_ONNX_OR(config->model.dpdfnet.model, "");
@@ -3145,7 +3165,7 @@ GetOfflineSpeakerDiarizationConfig(
   sd_config.segmentation.pyannote.model =
       SHERPA_ONNX_OR(config->segmentation.pyannote.model, "");
   sd_config.segmentation.num_threads =
-      SHERPA_ONNX_OR(config->segmentation.num_threads, 1);
+      GetNumThreads(config->segmentation.num_threads);
   sd_config.segmentation.debug = config->segmentation.debug;
   sd_config.segmentation.provider =
       SHERPA_ONNX_OR(config->segmentation.provider, "cpu");
@@ -3155,7 +3175,7 @@ GetOfflineSpeakerDiarizationConfig(
 
   sd_config.embedding.model = SHERPA_ONNX_OR(config->embedding.model, "");
   sd_config.embedding.num_threads =
-      SHERPA_ONNX_OR(config->embedding.num_threads, 1);
+      GetNumThreads(config->embedding.num_threads);
   sd_config.embedding.debug = config->embedding.debug;
   sd_config.embedding.provider =
       SHERPA_ONNX_OR(config->embedding.provider, "cpu");
@@ -3691,7 +3711,7 @@ static sherpa_onnx::OfflineDiacritizationConfig GetOfflineDiacritizationConfig(
   sherpa_onnx::OfflineDiacritizationConfig c;
   c.model.catt_encoder = SHERPA_ONNX_OR(config->model.catt_encoder, "");
   c.model.catt_decoder = SHERPA_ONNX_OR(config->model.catt_decoder, "");
-  c.model.num_threads = SHERPA_ONNX_OR(config->model.num_threads, 1);
+  c.model.num_threads = GetNumThreads(config->model.num_threads);
   c.model.debug = config->model.debug;
   c.model.provider = SHERPA_ONNX_OR(config->model.provider, "cpu");
   if (c.model.provider.empty()) {

@@ -193,8 +193,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
           "release_model_resources_after_use=true can be processed only once");
     }
 
-    Timer total_timer;
-    Timer segmentation_timer;
+    bool timing_enabled = config_.segmentation.debug ||
+                          config_.embedding.debug || config_.enable_profiling;
+    Timer total_timer(timing_enabled);
+    Timer segmentation_timer(timing_enabled);
     bool stopped = false;
     std::unique_ptr<DiarizationProfilingInfo> profiling;
     if (config_.enable_profiling) {
@@ -233,9 +235,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
 
     if (segmentations.empty()) {
+      // Timings are intentionally not logged since n can be non-positive.
       return {};
     }
-
     std::vector<Matrix2DInt32> labels;
     labels.reserve(segmentations.size());
 
@@ -246,7 +248,10 @@ class OfflineSpeakerDiarizationPyannoteImpl
     segmentations.clear();
 
     if (labels.size() == 1) {
-      return HandleOneChunkSpecialCase(labels[0], n);
+      OfflineSpeakerDiarizationResult result =
+          HandleOneChunkSpecialCase(labels[0], n);
+      LogTotalTime(total_timer.Elapsed(), n);
+      return result;
     }
 
     // labels[i] is a 0-1 matrix of shape (num_frames, num_speakers)
@@ -255,6 +260,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     Int32RowVector speakers_per_frame = ComputeSpeakersPerFrame(labels);
 
     if (speakers_per_frame.maxCoeff() == 0) {
+      LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No speakers found in the audio samples");
       return {};
     }
@@ -262,6 +268,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     auto chunk_speaker_samples_list_pair = GetChunkSpeakerSampleIndexes(labels);
 
     if (chunk_speaker_samples_list_pair.second.empty()) {
+      LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
       return {};
     }
@@ -282,7 +289,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
     StageResourceGuard embedding_guard(
         [this]() { ReleaseEmbeddingExtractor(); });
-    Timer embedding_timer;
+    Timer embedding_timer(timing_enabled);
     Matrix2D embeddings;
     if (profiling) {
       embeddings = ComputeEmbeddings<true>(
@@ -336,6 +343,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
         chunk_speaker_samples_list_pair.second);
 
     if (embeddings.rows() == 0) {
+      LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
       return {};
     }
@@ -345,7 +353,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
       return CreateStoppedResult();
     }
 
-    Timer clustering_timer;
+    Timer clustering_timer(timing_enabled);
     std::vector<int32_t> cluster_labels = clustering_->Cluster(
         &embeddings(0, 0), embeddings.rows(), embeddings.cols());
     LogStageTime("clustering", clustering_timer.Elapsed());
@@ -358,6 +366,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     std::vector<int32_t>().swap(valid_indexes);
 
     if (cluster_labels.empty()) {
+      LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No speakers found in the audio samples");
       return {};
     }
@@ -376,7 +385,9 @@ class OfflineSpeakerDiarizationPyannoteImpl
             final_labels(i, 0) = 1;
           }
         }
-        return ComputeResult(final_labels);
+        auto result = ComputeResult(final_labels);
+        LogTotalTime(total_timer.Elapsed(), n);
+        return result;
       }
     }
 

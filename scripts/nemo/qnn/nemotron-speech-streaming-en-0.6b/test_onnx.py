@@ -33,7 +33,7 @@ NodeArg(name='next_c', type='tensor(float)', shape=[2, 1, 640])
 NodeArg(name='encoder_out', type='tensor(float)', shape=[1, 1, 1024])
 NodeArg(name='decoder_out', type='tensor(float)', shape=[1, 1, 640])
 -----
-NodeArg(name='log_probs', type='tensor(float)', shape=[1, 1, 1, 1025])
+NodeArg(name='logits', type='tensor(float)', shape=[1, 1, 1, 1025])
 """
 
 
@@ -196,7 +196,7 @@ class OnnxModel:
         encoder_out: np.ndarray,
         decoder_out: np.ndarray,
     ):
-        log_probs = self.joiner.run(
+        logits = self.joiner.run(
             [
                 self.joiner.get_outputs()[0].name,
             ],
@@ -205,7 +205,7 @@ class OnnxModel:
                 self.joiner.get_inputs()[1].name: decoder_out,
             },
         )[0]
-        return log_probs
+        return logits
 
 
 def main():

@@ -5,6 +5,13 @@
 //  Created by fangjun on 2023/11/23.
 //
 
+#if canImport(SherpaOnnx)
+import SherpaOnnx
+#elseif canImport(SherpaOnnxShared)
+import SherpaOnnxShared
+#else
+#error("SherpaOnnx module not found. Please check your SPM dependency configuration.")
+#endif
 import Foundation
 
 // used to get the path to espeak-ng-data
@@ -199,7 +206,7 @@ func getTtsFor_kokoro_multi_lang_v1_0() -> SherpaOnnxOfflineTtsWrapper {
     model: model, voices: voices, tokens: tokens, dataDir: dataDir,
     lexicon: lexicon)
   let modelConfig = sherpaOnnxOfflineTtsModelConfig(kokoro: kokoro)
-  var config = sherpaOnnxOfflineTtsConfig(model: modelConfig)
+  var config = sherpaOnnxOfflineTtsConfig(model: modelConfig, ruleFsts: ruleFsts)
 
   return SherpaOnnxOfflineTtsWrapper(config: &config)
 }

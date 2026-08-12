@@ -8,6 +8,9 @@ final class SherpaOnnxOfflineSpeechDenoiserGtcrnModelConfig extends Struct {
 
 final class SherpaOnnxOfflineSpeechDenoiserDpdfNetModelConfig extends Struct {
   external Pointer<Utf8> model;
+
+  @Float()
+  external double attenuationLimitDb;
 }
 
 final class SherpaOnnxOfflineSpeechDenoiserModelConfig extends Struct {
@@ -1860,6 +1863,9 @@ typedef SherpaOnnxGetGitSha1 = SherpaOnnxGetGitSha1Native;
 typedef SherpaOnnxGetGitDateNative = Pointer<Utf8> Function();
 typedef SherpaOnnxGetGitDate = SherpaOnnxGetGitDateNative;
 
+typedef SherpaOnnxGetOnnxruntimeVersionStrNative = Pointer<Utf8> Function();
+typedef SherpaOnnxGetOnnxruntimeVersionStr = SherpaOnnxGetOnnxruntimeVersionStrNative;
+
 class SherpaOnnxBindings {
   static SherpaOnnxCreateOfflineSpeechDenoiser?
   sherpaOnnxCreateOfflineSpeechDenoiser;
@@ -2102,6 +2108,7 @@ class SherpaOnnxBindings {
   static SherpaOnnxGetVersionStr? getVersionStr;
   static SherpaOnnxGetGitSha1? getGitSha1;
   static SherpaOnnxGetGitDate? getGitDate;
+  static SherpaOnnxGetOnnxruntimeVersionStr? getOnnxruntimeVersionStr;
 
   static void init(DynamicLibrary dynamicLibrary) {
     sherpaOnnxCreateOfflineSpeechDenoiser ??= dynamicLibrary
@@ -2880,6 +2887,12 @@ class SherpaOnnxBindings {
     getGitDate ??= dynamicLibrary
         .lookup<NativeFunction<SherpaOnnxGetGitDateNative>>(
           'SherpaOnnxGetGitDate',
+        )
+        .asFunction();
+
+    getOnnxruntimeVersionStr ??= dynamicLibrary
+        .lookup<NativeFunction<SherpaOnnxGetOnnxruntimeVersionStrNative>>(
+          'SherpaOnnxGetOnnxruntimeVersionStr',
         )
         .asFunction();
   }

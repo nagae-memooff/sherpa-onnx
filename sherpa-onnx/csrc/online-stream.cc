@@ -124,10 +124,18 @@ class OnlineStream::Impl {
   OnlineTransducerDecoderResultNoOrt &GetQnnResult() { return qnn_result_; }
 
   void SetNeMoDecoderStates(std::vector<Ort::Value> decoder_states) {
-    decoder_states_ = std::move(decoder_states);
+    nemo_decoder_states_ = std::move(decoder_states);
   }
 
-  std::vector<Ort::Value> &GetNeMoDecoderStates() { return decoder_states_; }
+  void SetNeMoDecoderOut(Ort::Value decoder_out) {
+    nemo_decoder_out_ = std::move(decoder_out);
+  }
+
+  std::vector<Ort::Value> &GetNeMoDecoderStates() {
+    return nemo_decoder_states_;
+  }
+
+  Ort::Value &GetNeMoDecoderOut() { return nemo_decoder_out_; }
 
   const ContextGraphPtr &GetContextGraph() const { return context_graph_; }
 
@@ -203,7 +211,13 @@ class OnlineStream::Impl {
   OnlineCtcDecoderResult ctc_result_;
   std::vector<Ort::Value> states_;  // states for transducer or ctc models
   std::vector<OnlineStreamStateTensor> qnn_states_;
-  std::vector<Ort::Value> decoder_states_;  // states for nemo transducer models
+
+  // states for nemo transducer models
+  std::vector<Ort::Value> nemo_decoder_states_;
+
+  // decoder out for nemo transducer models
+  Ort::Value nemo_decoder_out_{nullptr};
+
   std::vector<float> paraformer_feat_cache_;
   std::vector<float> paraformer_encoder_out_cache_;
   std::vector<float> paraformer_alpha_cache_;
@@ -316,8 +330,16 @@ void OnlineStream::SetNeMoDecoderStates(
   return impl_->SetNeMoDecoderStates(std::move(decoder_states));
 }
 
+void OnlineStream::SetNeMoDecoderOut(Ort::Value decoder_out) {
+  return impl_->SetNeMoDecoderOut(std::move(decoder_out));
+}
+
 std::vector<Ort::Value> &OnlineStream::GetNeMoDecoderStates() {
   return impl_->GetNeMoDecoderStates();
+}
+
+Ort::Value &OnlineStream::GetNeMoDecoderOut() {
+  return impl_->GetNeMoDecoderOut();
 }
 
 const ContextGraphPtr &OnlineStream::GetContextGraph() const {
@@ -349,8 +371,7 @@ std::vector<float> &OnlineStream::GetParaformerAlphaCache() {
   return impl_->GetParaformerAlphaCache();
 }
 
-void OnlineStream::SetOption(const std::string &key,
-                             const std::string &value) {
+void OnlineStream::SetOption(const std::string &key, const std::string &value) {
   impl_->SetOption(key, value);
 }
 
