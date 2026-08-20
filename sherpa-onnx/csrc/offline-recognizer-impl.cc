@@ -442,6 +442,17 @@ std::unique_ptr<OfflineRecognizerImpl> OfflineRecognizerImpl::Create(
   SHERPA_ONNX_EXIT(-1);
 }
 
+std::unique_ptr<OfflineRecognizerImpl>
+OfflineRecognizerImpl::CreateQwen3ASRWithSharedModel(
+    const OfflineRecognizerConfig &config,
+    std::shared_ptr<OfflineQwen3ASRModel> model) {
+  if (!model || config.model_config.qwen3_asr.conv_frontend.empty()) {
+    return nullptr;
+  }
+  return std::make_unique<OfflineRecognizerQwen3ASRImpl>(config,
+                                                         std::move(model));
+}
+
 template <typename Manager>
 std::unique_ptr<OfflineRecognizerImpl> OfflineRecognizerImpl::Create(
     Manager *mgr, const OfflineRecognizerConfig &config) {

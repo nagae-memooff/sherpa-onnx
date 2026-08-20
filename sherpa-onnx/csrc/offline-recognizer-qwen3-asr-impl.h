@@ -26,6 +26,10 @@ class OfflineRecognizerQwen3ASRImpl : public OfflineRecognizerImpl {
  public:
   explicit OfflineRecognizerQwen3ASRImpl(const OfflineRecognizerConfig &config);
 
+  OfflineRecognizerQwen3ASRImpl(
+      const OfflineRecognizerConfig &config,
+      std::shared_ptr<OfflineQwen3ASRModel> model);
+
   template <typename Manager>
   OfflineRecognizerQwen3ASRImpl(Manager *mgr,
                                 const OfflineRecognizerConfig &config);
@@ -62,7 +66,7 @@ class OfflineRecognizerQwen3ASRImpl : public OfflineRecognizerImpl {
   void Decode(OfflineStream *stream) const;
 
   OfflineRecognizerConfig config_;
-  std::unique_ptr<OfflineQwen3ASRModel> model_;
+  std::shared_ptr<OfflineQwen3ASRModel> model_;
   std::unique_ptr<QwenAsrTokenizer> tokenizer_;
   std::vector<int64_t> audio_pad_ids_;
   std::vector<int64_t> prompt_ids_after_;

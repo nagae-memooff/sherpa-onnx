@@ -17,12 +17,18 @@
 
 namespace sherpa_onnx {
 
+class OfflineQwen3ASRModel;
+
 class OfflineRecognizerImpl {
  public:
   explicit OfflineRecognizerImpl(const OfflineRecognizerConfig &config);
 
   static std::unique_ptr<OfflineRecognizerImpl> Create(
       const OfflineRecognizerConfig &config);
+
+  static std::unique_ptr<OfflineRecognizerImpl> CreateQwen3ASRWithSharedModel(
+      const OfflineRecognizerConfig &config,
+      std::shared_ptr<OfflineQwen3ASRModel> model);
 
   template <typename Manager>
   OfflineRecognizerImpl(Manager *mgr, const OfflineRecognizerConfig &config);

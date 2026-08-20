@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if __ANDROID_API__ >= 9
@@ -158,6 +159,12 @@ OfflineRecognizer::OfflineRecognizer(Manager *mgr,
 
 OfflineRecognizer::OfflineRecognizer(const OfflineRecognizerConfig &config)
     : impl_(OfflineRecognizerImpl::Create(config)) {}
+
+OfflineRecognizer::OfflineRecognizer(
+    const OfflineRecognizerConfig &config,
+    std::shared_ptr<OfflineQwen3ASRModel> qwen3_model)
+    : impl_(OfflineRecognizerImpl::CreateQwen3ASRWithSharedModel(
+          config, std::move(qwen3_model))) {}
 
 OfflineRecognizer::~OfflineRecognizer() = default;
 

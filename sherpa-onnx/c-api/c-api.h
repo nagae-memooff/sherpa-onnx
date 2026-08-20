@@ -1230,6 +1230,11 @@ typedef struct SherpaOnnxOfflineRecognizerConfig {
 /** @brief Non-streaming recognizer handle. */
 typedef struct SherpaOnnxOfflineRecognizer SherpaOnnxOfflineRecognizer;
 
+// Qwen3-ASR 模型和 ORT Session 的共享所有者。由同一个 shared model
+// 创建的 recognizer 各自保留独立解码状态，但复用模型权重。
+typedef struct SherpaOnnxOfflineQwen3ASRSharedModel
+    SherpaOnnxOfflineQwen3ASRSharedModel;
+
 /** @brief Non-streaming decoding state for one utterance. */
 typedef struct SherpaOnnxOfflineStream SherpaOnnxOfflineStream;
 
@@ -1293,6 +1298,18 @@ typedef struct SherpaOnnxOfflineStream SherpaOnnxOfflineStream;
 SHERPA_ONNX_API const SherpaOnnxOfflineRecognizer *
 SherpaOnnxCreateOfflineRecognizer(
     const SherpaOnnxOfflineRecognizerConfig *config);
+
+SHERPA_ONNX_API const SherpaOnnxOfflineQwen3ASRSharedModel *
+SherpaOnnxCreateOfflineQwen3ASRSharedModel(
+    const SherpaOnnxOfflineRecognizerConfig *config);
+
+SHERPA_ONNX_API void SherpaOnnxDestroyOfflineQwen3ASRSharedModel(
+    const SherpaOnnxOfflineQwen3ASRSharedModel *model);
+
+SHERPA_ONNX_API const SherpaOnnxOfflineRecognizer *
+SherpaOnnxCreateOfflineRecognizerWithSharedQwen3ASRModel(
+    const SherpaOnnxOfflineRecognizerConfig *config,
+    const SherpaOnnxOfflineQwen3ASRSharedModel *model);
 
 /**
  * @brief Update the configuration of an existing offline recognizer.

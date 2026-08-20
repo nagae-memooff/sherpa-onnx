@@ -434,7 +434,19 @@ OfflineRecognizerQwen3ASRImpl::OfflineRecognizerQwen3ASRImpl(
     const OfflineRecognizerConfig &config)
     : OfflineRecognizerImpl(config),
       config_(config),
-      model_(std::make_unique<OfflineQwen3ASRModel>(config.model_config)),
+      model_(std::make_shared<OfflineQwen3ASRModel>(config.model_config)),
+      tokenizer_(std::make_unique<QwenAsrTokenizer>(
+          config.model_config.qwen3_asr.tokenizer)),
+      rng_(config.model_config.qwen3_asr.seed) {
+  InitPromptTemplateIds();
+}
+
+OfflineRecognizerQwen3ASRImpl::OfflineRecognizerQwen3ASRImpl(
+    const OfflineRecognizerConfig &config,
+    std::shared_ptr<OfflineQwen3ASRModel> model)
+    : OfflineRecognizerImpl(config),
+      config_(config),
+      model_(std::move(model)),
       tokenizer_(std::make_unique<QwenAsrTokenizer>(
           config.model_config.qwen3_asr.tokenizer)),
       rng_(config.model_config.qwen3_asr.seed) {
@@ -446,7 +458,7 @@ OfflineRecognizerQwen3ASRImpl::OfflineRecognizerQwen3ASRImpl(
     Manager *mgr, const OfflineRecognizerConfig &config)
     : OfflineRecognizerImpl(mgr, config),
       config_(config),
-      model_(std::make_unique<OfflineQwen3ASRModel>(mgr, config.model_config)),
+      model_(std::make_shared<OfflineQwen3ASRModel>(mgr, config.model_config)),
       tokenizer_(std::make_unique<QwenAsrTokenizer>(
           mgr, config.model_config.qwen3_asr.tokenizer)),
       rng_(config.model_config.qwen3_asr.seed) {

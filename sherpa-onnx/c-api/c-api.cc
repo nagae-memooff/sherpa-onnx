@@ -26,6 +26,7 @@
 #include "sherpa-onnx/csrc/macros.h"
 #include "sherpa-onnx/csrc/offline-diacritization.h"
 #include "sherpa-onnx/csrc/offline-punctuation.h"
+#include "sherpa-onnx/csrc/offline-qwen3-asr-model.h"
 #include "sherpa-onnx/csrc/offline-recognizer.h"
 #include "sherpa-onnx/csrc/offline-source-separation.h"
 #include "sherpa-onnx/csrc/offline-speech-denoiser.h"
@@ -450,6 +451,10 @@ struct SherpaOnnxOfflineRecognizer {
   std::unique_ptr<sherpa_onnx::OfflineRecognizer> impl;
 };
 
+struct SherpaOnnxOfflineQwen3ASRSharedModel {
+  std::shared_ptr<sherpa_onnx::OfflineQwen3ASRModel> impl;
+};
+
 struct SherpaOnnxOfflineStream {
   std::unique_ptr<sherpa_onnx::OfflineStream> impl;
   explicit SherpaOnnxOfflineStream(
@@ -719,6 +724,48 @@ const SherpaOnnxOfflineRecognizer *SherpaOnnxCreateOfflineRecognizer(
   recognizer->impl =
       std::make_unique<sherpa_onnx::OfflineRecognizer>(recognizer_config);
 
+  return recognizer;
+}
+
+const SherpaOnnxOfflineQwen3ASRSharedModel *
+SherpaOnnxCreateOfflineQwen3ASRSharedModel(
+    const SherpaOnnxOfflineRecognizerConfig *config) {
+  if (!config) return nullptr;
+  sherpa_onnx::OfflineRecognizerConfig recognizer_config =
+      GetOfflineRecognizerConfig(config);
+  if (!recognizer_config.Validate() ||
+      recognizer_config.model_config.qwen3_asr.conv_frontend.empty()) {
+    SHERPA_ONNX_LOGE("Invalid Qwen3-ASR shared model config");
+    return nullptr;
+  }
+
+  auto *model = new SherpaOnnxOfflineQwen3ASRSharedModel;
+  model->impl = std::make_shared<sherpa_onnx::OfflineQwen3ASRModel>(
+      recognizer_config.model_config);
+  return model;
+}
+
+void SherpaOnnxDestroyOfflineQwen3ASRSharedModel(
+    const SherpaOnnxOfflineQwen3ASRSharedModel *model) {
+  delete model;
+}
+
+const SherpaOnnxOfflineRecognizer *
+SherpaOnnxCreateOfflineRecognizerWithSharedQwen3ASRModel(
+    const SherpaOnnxOfflineRecognizerConfig *config,
+    const SherpaOnnxOfflineQwen3ASRSharedModel *model) {
+  if (!config || !model || !model->impl) return nullptr;
+  sherpa_onnx::OfflineRecognizerConfig recognizer_config =
+      GetOfflineRecognizerConfig(config);
+  if (!recognizer_config.Validate() ||
+      recognizer_config.model_config.qwen3_asr.conv_frontend.empty()) {
+    SHERPA_ONNX_LOGE("Invalid Qwen3-ASR recognizer config");
+    return nullptr;
+  }
+
+  auto *recognizer = new SherpaOnnxOfflineRecognizer;
+  recognizer->impl = std::make_unique<sherpa_onnx::OfflineRecognizer>(
+      recognizer_config, model->impl);
   return recognizer;
 }
 

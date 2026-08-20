@@ -75,6 +75,7 @@ struct OfflineRecognizerConfig {
 };
 
 class OfflineRecognizerImpl;
+class OfflineQwen3ASRModel;
 
 class OfflineRecognizer {
  public:
@@ -84,6 +85,9 @@ class OfflineRecognizer {
   OfflineRecognizer(Manager *mgr, const OfflineRecognizerConfig &config);
 
   explicit OfflineRecognizer(const OfflineRecognizerConfig &config);
+
+  OfflineRecognizer(const OfflineRecognizerConfig &config,
+                    std::shared_ptr<OfflineQwen3ASRModel> qwen3_model);
 
   /// Create a stream for decoding.
   std::unique_ptr<OfflineStream> CreateStream() const;
