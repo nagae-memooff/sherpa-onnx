@@ -137,7 +137,8 @@ static void SplitProviderAndConfig(
 
 Ort::SessionOptions GetSessionOptionsImpl(
     int32_t num_threads, const std::string &provider_str,
-    const ProviderConfig *provider_config /*= nullptr*/) {
+    const ProviderConfig *provider_config /*= nullptr*/,
+    const SessionOptionsConfig *session_config /*= nullptr*/) {
   std::unordered_map<std::string, std::string> config;
   std::string new_provider_str;
 
@@ -187,6 +188,8 @@ Ort::SessionOptions GetSessionOptionsImpl(
       sess_opts.DisableMemPattern();
     }
     config.erase("EnableMemPattern");
+  } else if (session_config && session_config->enable_mem_pattern == 0) {
+    sess_opts.DisableMemPattern();
   }
 
   if (config.find("EnableCpuMemArena") != config.end()) {
@@ -342,6 +345,14 @@ Ort::SessionOptions GetSessionOptionsImpl(
           // Default OrtCudnnConvAlgoSearchExhaustive is extremely slow
           options.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchHeuristic;
           // set more options on need
+        }
+        if (session_config != nullptr) {
+          options.arena_extend_strategy =
+              session_config->cuda_arena_extend_strategy;
+          if (session_config->cuda_gpu_mem_limit > 0) {
+            options.gpu_mem_limit = static_cast<size_t>(
+                session_config->cuda_gpu_mem_limit);
+          }
         }
         sess_opts.AppendExecutionProvider_CUDA(options);
       } else {

@@ -617,6 +617,12 @@ struct OfflineQwen3ASRModelConfig {
   float top_p = 0.8f;
   /** Random seed for reproducible sampling. */
   int32_t seed = 42;
+  /** Whether ORT memory pattern is enabled. */
+  bool enable_mem_pattern = true;
+  /** CUDA arena strategy: 0=kNextPowerOfTwo, 1=kSameAsRequested. */
+  int32_t cuda_arena_extend_strategy = 0;
+  /** CUDA arena limit in bytes. Zero keeps the ORT default. */
+  uint64_t cuda_gpu_mem_limit = 0;
 };
 
 /**

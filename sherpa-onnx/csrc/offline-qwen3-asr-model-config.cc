@@ -4,6 +4,7 @@
 
 #include "sherpa-onnx/csrc/offline-qwen3-asr-model-config.h"
 
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -43,6 +44,13 @@ void OfflineQwen3ASRModelConfig::Register(ParseOptions *po) {
                "Top-p (nucleus) sampling threshold for Qwen3-ASR");
 
   po->Register("qwen3-asr-seed", &seed, "Random seed for Qwen3-ASR");
+
+  po->Register("qwen3-asr-enable-mem-pattern", &enable_mem_pattern,
+               "Enable ONNX Runtime memory pattern for Qwen3-ASR sessions");
+
+  po->Register("qwen3-asr-cuda-arena-extend-strategy",
+               &cuda_arena_extend_strategy,
+               "CUDA arena strategy: 0=kNextPowerOfTwo, 1=kSameAsRequested");
 }
 
 bool OfflineQwen3ASRModelConfig::Validate() const {
@@ -130,6 +138,21 @@ bool OfflineQwen3ASRModelConfig::Validate() const {
     return false;
   }
 
+  if (cuda_arena_extend_strategy < 0 || cuda_arena_extend_strategy > 1) {
+    SHERPA_ONNX_LOGE(
+        "--qwen3-asr-cuda-arena-extend-strategy should be 0 or 1. Given: %d",
+        cuda_arena_extend_strategy);
+    return false;
+  }
+
+  if (cuda_gpu_mem_limit >
+      static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+    SHERPA_ONNX_LOGE(
+        "Qwen3-ASR CUDA gpu_mem_limit does not fit in size_t: %llu",
+        static_cast<unsigned long long>(cuda_gpu_mem_limit));
+    return false;
+  }
+
   return true;
 }
 
@@ -146,7 +169,10 @@ std::string OfflineQwen3ASRModelConfig::ToString() const {
   os << "max_new_tokens=" << max_new_tokens << ", ";
   os << "temperature=" << temperature << ", ";
   os << "top_p=" << top_p << ", ";
-  os << "seed=" << seed << ")";
+  os << "seed=" << seed << ", ";
+  os << "enable_mem_pattern=" << enable_mem_pattern << ", ";
+  os << "cuda_arena_extend_strategy=" << cuda_arena_extend_strategy << ", ";
+  os << "cuda_gpu_mem_limit=" << cuda_gpu_mem_limit << ")";
 
   return os.str();
 }

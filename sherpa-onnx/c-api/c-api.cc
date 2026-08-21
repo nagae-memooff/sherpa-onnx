@@ -666,6 +666,12 @@ static sherpa_onnx::OfflineRecognizerConfig GetOfflineRecognizerConfig(
       SHERPA_ONNX_OR(config->model_config.qwen3_asr.top_p, 0.8f);
   recognizer_config.model_config.qwen3_asr.seed =
       SHERPA_ONNX_OR(config->model_config.qwen3_asr.seed, 42);
+  recognizer_config.model_config.qwen3_asr.enable_mem_pattern =
+      config->model_config.qwen3_asr.disable_mem_pattern == 0;
+  recognizer_config.model_config.qwen3_asr.cuda_arena_extend_strategy =
+      config->model_config.qwen3_asr.cuda_arena_extend_strategy;
+  recognizer_config.model_config.qwen3_asr.cuda_gpu_mem_limit =
+      config->model_config.qwen3_asr.cuda_gpu_mem_limit;
 
   recognizer_config.lm_config.model =
       SHERPA_ONNX_OR(config->lm_config.model, "");

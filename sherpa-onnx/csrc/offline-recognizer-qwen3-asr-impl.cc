@@ -65,6 +65,36 @@ struct Qwen3DecodeProfile {
   size_t kv_cache_bytes = 0;
   size_t logits_d2h_bytes = 0;
   size_t kv_delta_d2d_bytes = 0;
+  bool allocator_stats_requested = false;
+  Qwen3AllocatorStatsSnapshot allocator_before;
+  Qwen3AllocatorStatsSnapshot allocator_after;
+
+  static void AppendAllocatorStats(std::ostringstream *os,
+                                   const Qwen3AllocatorStats &stats) {
+    *os << "{\"available\":" << (stats.available ? "true" : "false")
+        << ",\"limit\":" << stats.limit
+        << ",\"in_use\":" << stats.in_use
+        << ",\"total_allocated\":" << stats.total_allocated
+        << ",\"max_in_use\":" << stats.max_in_use
+        << ",\"num_allocs\":" << stats.num_allocs
+        << ",\"num_reserves\":" << stats.num_reserves
+        << ",\"num_arena_extensions\":"
+        << stats.num_arena_extensions
+        << ",\"num_arena_shrinkages\":"
+        << stats.num_arena_shrinkages
+        << ",\"max_alloc_size\":" << stats.max_alloc_size << "}";
+  }
+
+  static void AppendAllocatorSnapshot(
+      std::ostringstream *os, const Qwen3AllocatorStatsSnapshot &snapshot) {
+    *os << "{\"conv\":";
+    AppendAllocatorStats(os, snapshot.conv);
+    *os << ",\"encoder\":";
+    AppendAllocatorStats(os, snapshot.encoder);
+    *os << ",\"decoder\":";
+    AppendAllocatorStats(os, snapshot.decoder);
+    *os << "}";
+  }
 
   std::string AsJson() const {
     std::ostringstream os;
@@ -104,8 +134,15 @@ struct Qwen3DecodeProfile {
        << ",\"legacy_cache_h2d_bytes_estimate\":"
        << (cuda_device_cache
                ? kv_cache_bytes * static_cast<size_t>(forward_calls)
-               : 0)
-       << "}";
+               : 0);
+    if (allocator_stats_requested) {
+      os << ",\"allocator_stats\":{\"before\":";
+      AppendAllocatorSnapshot(&os, allocator_before);
+      os << ",\"after\":";
+      AppendAllocatorSnapshot(&os, allocator_after);
+      os << "}";
+    }
+    os << "}";
     return os.str();
   }
 };
@@ -1234,10 +1271,19 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
   std::unique_ptr<Qwen3DecodeProfile> profile_owner;
-  if (stream->GetOptionInt("profile", 0) != 0) {
+  const bool allocator_stats_requested =
+      stream->GetOptionInt("allocator_stats", 0) != 0;
+  if (stream->GetOptionInt("profile", 0) != 0 ||
+      allocator_stats_requested) {
     profile_owner = std::make_unique<Qwen3DecodeProfile>();
   }
   Qwen3DecodeProfile *profile = profile_owner.get();
+  if (profile) {
+    profile->allocator_stats_requested = allocator_stats_requested;
+    if (allocator_stats_requested) {
+      profile->allocator_before = model_->GetAllocatorStats();
+    }
+  }
   const auto total_start =
       profile ? ProfileClock::now() : ProfileClock::time_point{};
 
@@ -1343,6 +1389,9 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
   if (profile) {
     profile->homophone_replace_ms += ProfileElapsedMs(homophone_start);
     profile->total_ms = ProfileElapsedMs(total_start);
+    if (profile->allocator_stats_requested) {
+      profile->allocator_after = model_->GetAllocatorStats();
+    }
     r.profile_json = profile->AsJson();
   }
 

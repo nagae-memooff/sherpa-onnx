@@ -15,6 +15,25 @@
 
 namespace sherpa_onnx {
 
+struct Qwen3AllocatorStats {
+  bool available = false;
+  int64_t limit = -1;
+  int64_t in_use = 0;
+  int64_t total_allocated = 0;
+  int64_t max_in_use = 0;
+  int64_t num_allocs = 0;
+  int64_t num_reserves = 0;
+  int64_t num_arena_extensions = 0;
+  int64_t num_arena_shrinkages = 0;
+  int64_t max_alloc_size = 0;
+};
+
+struct Qwen3AllocatorStatsSnapshot {
+  Qwen3AllocatorStats conv;
+  Qwen3AllocatorStats encoder;
+  Qwen3AllocatorStats decoder;
+};
+
 class OfflineQwen3ASRModel {
  public:
   explicit OfflineQwen3ASRModel(const OfflineModelConfig &config);
@@ -98,6 +117,9 @@ class OfflineQwen3ASRModel {
   /** Return an allocator for allocating memory
    */
   OrtAllocator *Allocator() const;
+
+  /** Return CUDA allocator statistics for the three persistent sessions. */
+  Qwen3AllocatorStatsSnapshot GetAllocatorStats() const;
 
  private:
   class Impl;

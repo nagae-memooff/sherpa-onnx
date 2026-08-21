@@ -1063,6 +1063,12 @@ typedef struct SherpaOnnxOfflineQwen3ASRModelConfig {
   /** Optional comma-separated hotwords (UTF-8, ASCII ','), e.g. @c
    * "foo,bar,baz". */
   const char *hotwords;
+  /** Non-zero disables ORT memory pattern. Zero keeps the existing default. */
+  int32_t disable_mem_pattern;
+  /** CUDA arena strategy: 0=kNextPowerOfTwo, 1=kSameAsRequested. */
+  int32_t cuda_arena_extend_strategy;
+  /** CUDA arena limit in bytes. Zero keeps the ORT default. */
+  uint64_t cuda_gpu_mem_limit;
 } SherpaOnnxOfflineQwen3ASRModelConfig;
 
 /** @brief Configuration for a MedASR CTC model. */

@@ -11,7 +11,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -122,6 +124,62 @@ inline bool IsCudaProvider(const std::string &provider) {
   return p == "cuda" || (p.size() > 4 && p.find("cuda") == 0);
 }
 
+SessionOptionsConfig Qwen3SessionOptionsConfig(
+    const OfflineModelConfig &config) {
+  SessionOptionsConfig ans;
+  ans.enable_mem_pattern = config.qwen3_asr.enable_mem_pattern ? 1 : 0;
+  ans.cuda_arena_extend_strategy =
+      config.qwen3_asr.cuda_arena_extend_strategy;
+  ans.cuda_gpu_mem_limit = config.qwen3_asr.cuda_gpu_mem_limit;
+  return ans;
+}
+
+Ort::SessionOptions GetQwen3SessionOptions(const OfflineModelConfig &config) {
+  const auto session_config = Qwen3SessionOptionsConfig(config);
+  return GetSessionOptionsImpl(config.num_threads, config.provider, nullptr,
+                               &session_config);
+}
+
+int64_t AllocatorStatValue(
+    const std::unordered_map<std::string, std::string> &values,
+    const char *key, int64_t default_value = 0) {
+  const auto found = values.find(key);
+  if (found == values.end()) return default_value;
+  try {
+    return std::stoll(found->second);
+  } catch (...) {
+    return default_value;
+  }
+}
+
+Qwen3AllocatorStats ReadAllocatorStats(const Ort::Allocator *allocator) {
+  Qwen3AllocatorStats ans;
+#if ORT_API_VERSION >= 23
+  if (!allocator) return ans;
+  try {
+    const auto values = allocator->GetStats().GetKeyValuePairs();
+    if (values.empty()) return ans;
+    ans.available = true;
+    ans.limit = AllocatorStatValue(values, "Limit", -1);
+    ans.in_use = AllocatorStatValue(values, "InUse");
+    ans.total_allocated = AllocatorStatValue(values, "TotalAllocated");
+    ans.max_in_use = AllocatorStatValue(values, "MaxInUse");
+    ans.num_allocs = AllocatorStatValue(values, "NumAllocs");
+    ans.num_reserves = AllocatorStatValue(values, "NumReserves");
+    ans.num_arena_extensions =
+        AllocatorStatValue(values, "NumArenaExtensions");
+    ans.num_arena_shrinkages =
+        AllocatorStatValue(values, "NumArenaShrinkages");
+    ans.max_alloc_size = AllocatorStatValue(values, "MaxAllocSize");
+  } catch (const Ort::Exception &) {
+    return Qwen3AllocatorStats{};
+  }
+#else
+  (void)allocator;
+#endif
+  return ans;
+}
+
 class CudaRuntime {
  public:
   enum MemcpyKind {
@@ -218,9 +276,9 @@ class OfflineQwen3ASRModel::Impl {
   explicit Impl(const OfflineModelConfig &config)
       : config_(config),
         env_(ORT_LOGGING_LEVEL_ERROR, "qwen3-asr"),
-        sess_opts_conv_(GetSessionOptions(config)),
-        sess_opts_encoder_(GetSessionOptions(config)),
-        sess_opts_decoder_(GetSessionOptions(config)),
+        sess_opts_conv_(GetQwen3SessionOptions(config)),
+        sess_opts_encoder_(GetQwen3SessionOptions(config)),
+        sess_opts_decoder_(GetQwen3SessionOptions(config)),
         allocator_(),
         cpu_mem_info_(
             Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault)),
@@ -249,9 +307,9 @@ class OfflineQwen3ASRModel::Impl {
   Impl(Manager *mgr, const OfflineModelConfig &config)
       : config_(config),
         env_(ORT_LOGGING_LEVEL_ERROR, "qwen3-asr"),
-        sess_opts_conv_(GetSessionOptions(config)),
-        sess_opts_encoder_(GetSessionOptions(config)),
-        sess_opts_decoder_(GetSessionOptions(config)),
+        sess_opts_conv_(GetQwen3SessionOptions(config)),
+        sess_opts_encoder_(GetQwen3SessionOptions(config)),
+        sess_opts_decoder_(GetQwen3SessionOptions(config)),
         allocator_(),
         cpu_mem_info_(
             Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault)),
@@ -296,6 +354,10 @@ class OfflineQwen3ASRModel::Impl {
     if (use_cuda_iobinding_) {
       cuda_mem_info_ = std::make_unique<Ort::MemoryInfo>(
           "Cuda", OrtDeviceAllocator, 0, OrtMemTypeDefault);
+      conv_cuda_allocator_ = std::make_unique<Ort::Allocator>(
+          *conv_sess_, *cuda_mem_info_);
+      encoder_cuda_allocator_ = std::make_unique<Ort::Allocator>(
+          *encoder_sess_, *cuda_mem_info_);
       cuda_allocator_ = std::make_unique<Ort::Allocator>(
           *decoder_sess_, *cuda_mem_info_);
       use_cuda_device_cache_ = true;
@@ -919,6 +981,14 @@ class OfflineQwen3ASRModel::Impl {
 
   OrtAllocator *Allocator() { return allocator_; }
 
+  Qwen3AllocatorStatsSnapshot GetAllocatorStats() const {
+    Qwen3AllocatorStatsSnapshot ans;
+    ans.conv = ReadAllocatorStats(conv_cuda_allocator_.get());
+    ans.encoder = ReadAllocatorStats(encoder_cuda_allocator_.get());
+    ans.decoder = ReadAllocatorStats(cuda_allocator_.get());
+    return ans;
+  }
+
  private:
   OfflineModelConfig config_;
 
@@ -954,6 +1024,8 @@ class OfflineQwen3ASRModel::Impl {
   Ort::AllocatorWithDefaultOptions allocator_;
   Ort::MemoryInfo cpu_mem_info_;
   std::unique_ptr<Ort::MemoryInfo> cuda_mem_info_;
+  std::unique_ptr<Ort::Allocator> conv_cuda_allocator_;
+  std::unique_ptr<Ort::Allocator> encoder_cuda_allocator_;
   std::unique_ptr<Ort::Allocator> cuda_allocator_;
 
   bool is_cpu_provider_ = true;
@@ -1022,6 +1094,10 @@ size_t OfflineQwen3ASRModel::GetKvCacheBytes(int64_t batch) const {
 
 OrtAllocator *OfflineQwen3ASRModel::Allocator() const {
   return impl_->Allocator();
+}
+
+Qwen3AllocatorStatsSnapshot OfflineQwen3ASRModel::GetAllocatorStats() const {
+  return impl_->GetAllocatorStats();
 }
 
 #if __ANDROID_API__ >= 9

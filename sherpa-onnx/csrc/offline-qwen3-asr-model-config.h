@@ -5,6 +5,7 @@
 #ifndef SHERPA_ONNX_CSRC_OFFLINE_QWEN3_ASR_MODEL_CONFIG_H_
 #define SHERPA_ONNX_CSRC_OFFLINE_QWEN3_ASR_MODEL_CONFIG_H_
 
+#include <cstdint>
 #include <string>
 
 #include "sherpa-onnx/csrc/parse-options.h"
@@ -41,6 +42,15 @@ struct OfflineQwen3ASRModelConfig {
 
   // Random seed for reproducibility
   int32_t seed = 42;
+
+  // Keep ORT memory pattern enabled for the three persistent sessions.
+  bool enable_mem_pattern = true;
+
+  // ORT CUDA arena strategy: 0=kNextPowerOfTwo, 1=kSameAsRequested.
+  int32_t cuda_arena_extend_strategy = 0;
+
+  // CUDA arena limit in bytes. 0 keeps the ORT default (unlimited).
+  uint64_t cuda_gpu_mem_limit = 0;
 
   OfflineQwen3ASRModelConfig() = default;
 

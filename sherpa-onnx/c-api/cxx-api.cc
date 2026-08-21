@@ -372,6 +372,12 @@ static SherpaOnnxOfflineRecognizerConfig Convert(
       config.model_config.qwen3_asr.temperature;
   c.model_config.qwen3_asr.top_p = config.model_config.qwen3_asr.top_p;
   c.model_config.qwen3_asr.seed = config.model_config.qwen3_asr.seed;
+  c.model_config.qwen3_asr.disable_mem_pattern =
+      config.model_config.qwen3_asr.enable_mem_pattern ? 0 : 1;
+  c.model_config.qwen3_asr.cuda_arena_extend_strategy =
+      config.model_config.qwen3_asr.cuda_arena_extend_strategy;
+  c.model_config.qwen3_asr.cuda_gpu_mem_limit =
+      config.model_config.qwen3_asr.cuda_gpu_mem_limit;
 
   c.model_config.medasr.model = config.model_config.medasr.model.c_str();
 
