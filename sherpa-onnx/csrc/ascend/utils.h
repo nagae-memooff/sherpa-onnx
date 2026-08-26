@@ -139,6 +139,7 @@ class AclModel {
 
  private:
   uint32_t model_id_ = 0;
+  bool loaded_ = false;
   std::unique_ptr<AclModelDesc> desc_;
 
   std::vector<std::string> input_names_;

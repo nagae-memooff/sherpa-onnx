@@ -168,6 +168,7 @@ AclModel::AclModel(const std::string &model_path) {
   SHERPA_ONNX_ASCEND_CHECK(ret,
                            "Failed to call aclmdlLoadFromFile from file '%s'",
                            model_path.c_str());
+  loaded_ = true;
 
   Init();
 }
@@ -175,12 +176,13 @@ AclModel::AclModel(const std::string &model_path) {
 AclModel::AclModel(const void *model, size_t model_size) {
   aclError ret = aclmdlLoadFromMem(model, model_size, &model_id_);
   SHERPA_ONNX_ASCEND_CHECK(ret, "Failed to call aclmdlLoadFromMem");
+  loaded_ = true;
 
   Init();
 }
 
 AclModel::~AclModel() {
-  if (model_id_ != 0) {
+  if (loaded_) {
     aclError ret = aclmdlUnload(model_id_);
     SHERPA_ONNX_ASCEND_CHECK(ret, "Failed to call aclmdlUnload");
   }
