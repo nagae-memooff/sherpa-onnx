@@ -32,7 +32,7 @@ void SpeakerEmbeddingExtractorConfig::Register(ParseOptions *po) {
                "true to print model information while loading it.");
 
   po->Register("provider", &provider,
-               "Specify a provider to use: cpu, cuda, coreml");
+               "Specify a provider to use: cpu, cuda, coreml, ascend");
 }
 
 bool SpeakerEmbeddingExtractorConfig::Validate() const {

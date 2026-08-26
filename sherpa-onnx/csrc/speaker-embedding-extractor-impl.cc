@@ -22,6 +22,10 @@
 #include "sherpa-onnx/csrc/speaker-embedding-extractor-nemo-impl.h"
 #include "sherpa-onnx/csrc/text-utils.h"
 
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+#include "sherpa-onnx/csrc/ascend/speaker-embedding-extractor-model-ascend.h"
+#endif
+
 namespace sherpa_onnx {
 
 namespace {
@@ -140,6 +144,14 @@ static ModelType GetModelType(char *model_data, size_t model_data_length,
 std::unique_ptr<SpeakerEmbeddingExtractorImpl>
 SpeakerEmbeddingExtractorImpl::Create(
     const SpeakerEmbeddingExtractorConfig &config) {
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+  if (ToLowerAscii(config.provider) == "ascend") {
+    using AscendImpl = SpeakerEmbeddingExtractorGeneralImplTpl<
+        SpeakerEmbeddingExtractorModelAscend>;
+    return std::make_unique<AscendImpl>(config);
+  }
+#endif
+
   ModelType model_type = ModelType::kUnknown;
 
   {

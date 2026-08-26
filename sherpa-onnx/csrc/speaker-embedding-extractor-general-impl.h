@@ -18,15 +18,16 @@
 
 namespace sherpa_onnx {
 
-class SpeakerEmbeddingExtractorGeneralImpl
+template <typename Model>
+class SpeakerEmbeddingExtractorGeneralImplTpl
     : public SpeakerEmbeddingExtractorImpl {
  public:
-  explicit SpeakerEmbeddingExtractorGeneralImpl(
+  explicit SpeakerEmbeddingExtractorGeneralImplTpl(
       const SpeakerEmbeddingExtractorConfig &config)
       : model_(config) {}
 
   template <typename Manager>
-  SpeakerEmbeddingExtractorGeneralImpl(
+  SpeakerEmbeddingExtractorGeneralImplTpl(
       Manager *mgr, const SpeakerEmbeddingExtractorConfig &config)
       : model_(mgr, config) {}
 
@@ -284,8 +285,11 @@ class SpeakerEmbeddingExtractorGeneralImpl
   }
 
  private:
-  SpeakerEmbeddingExtractorModel model_;
+  Model model_;
 };
+
+using SpeakerEmbeddingExtractorGeneralImpl =
+    SpeakerEmbeddingExtractorGeneralImplTpl<SpeakerEmbeddingExtractorModel>;
 
 }  // namespace sherpa_onnx
 

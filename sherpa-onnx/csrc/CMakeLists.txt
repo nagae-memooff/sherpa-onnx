@@ -252,6 +252,7 @@ if(SHERPA_ONNX_ENABLE_ASCEND_NPU)
     ./ascend/offline-sense-voice-model-ascend.cc
     ./ascend/offline-whisper-model-ascend.cc
     ./ascend/offline-zipformer-ctc-model-ascend.cc
+    ./ascend/speaker-embedding-extractor-model-ascend.cc
     ./ascend/utils.cc
   )
 endif()
