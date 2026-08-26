@@ -22,7 +22,7 @@ constexpr int32_t kDeviceId = 0;
 constexpr int64_t kBatchSize = 1;
 constexpr int64_t kFeatureDim = 80;
 constexpr int64_t kEmbeddingDim = 256;
-constexpr int64_t kMinFrames = 16;
+constexpr int64_t kMinFrames = 1;
 constexpr int64_t kMaxFrames = 1000;
 
 // ggml CANN and sherpa-onnx share the process-wide ACL runtime. ggml may have
@@ -83,7 +83,7 @@ class SpeakerEmbeddingExtractorModelAscend::Impl {
         shape[2] != kFeatureDim || shape[1] < kMinFrames ||
         shape[1] > kMaxFrames) {
       SHERPA_ONNX_LOGE(
-          "Ascend WeSpeaker expects float32 input [1,T,80], 16 <= T <= "
+          "Ascend WeSpeaker expects float32 input [1,T,80], 1 <= T <= "
           "1000. Given shape: [%lld,%lld,%lld]",
           shape.size() > 0 ? static_cast<long long>(shape[0]) : -1LL,
           shape.size() > 1 ? static_cast<long long>(shape[1]) : -1LL,
