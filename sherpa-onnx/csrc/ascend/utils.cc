@@ -193,9 +193,11 @@ void AclModel::Init() {
 
   InitInputNames();
   InitInputShapes();
+  InitInputDataTypes();
 
   InitOutputNames();
   InitOutputShapes();
+  InitOutputDataTypes();
 }
 
 void AclModel::InitInputNames() {
@@ -226,6 +228,14 @@ void AclModel::InitInputShapes() {
   }
 }
 
+void AclModel::InitInputDataTypes() {
+  size_t num_inputs = aclmdlGetNumInputs(desc_->Get());
+  input_data_types_.resize(num_inputs);
+  for (size_t i = 0; i != num_inputs; ++i) {
+    input_data_types_[i] = aclmdlGetInputDataType(desc_->Get(), i);
+  }
+}
+
 void AclModel::InitOutputNames() {
   size_t num_outputs = aclmdlGetNumOutputs(desc_->Get());
   output_names_.resize(num_outputs);
@@ -250,6 +260,14 @@ void AclModel::InitOutputShapes() {
       shape[k] = dims.dims[k];
     }
     output_shapes_[i] = std::move(shape);
+  }
+}
+
+void AclModel::InitOutputDataTypes() {
+  size_t num_outputs = aclmdlGetNumOutputs(desc_->Get());
+  output_data_types_.resize(num_outputs);
+  for (size_t i = 0; i != num_outputs; ++i) {
+    output_data_types_[i] = aclmdlGetOutputDataType(desc_->Get(), i);
   }
 }
 

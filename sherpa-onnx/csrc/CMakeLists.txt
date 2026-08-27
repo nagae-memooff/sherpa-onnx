@@ -255,6 +255,11 @@ if(SHERPA_ONNX_ENABLE_ASCEND_NPU)
     ./ascend/speaker-embedding-extractor-model-ascend.cc
     ./ascend/utils.cc
   )
+  if(SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION)
+    list(APPEND sources
+      ./ascend/offline-speaker-segmentation-pyannote-model-ascend.cc
+    )
+  endif()
 endif()
 
 if(SHERPA_ONNX_ENABLE_QNN)
@@ -578,6 +583,25 @@ if(SHERPA_ONNX_ENABLE_BINARY)
       endif()
     endforeach()
   endif()
+endif()
+
+if(SHERPA_ONNX_ENABLE_ASCEND_NPU AND
+   SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION)
+  add_executable(sherpa-onnx-speaker-segmentation-ascend-compare
+    speaker-segmentation-ascend-compare.cc)
+  target_link_libraries(sherpa-onnx-speaker-segmentation-ascend-compare
+    sherpa-onnx-core
+    -L${ASCEND_TOOLKIT_HOME}/lib64
+    -lascendcl)
+  target_include_directories(
+    sherpa-onnx-speaker-segmentation-ascend-compare PRIVATE
+    ${ASCEND_TOOLKIT_HOME}/include)
+  if(UNIX)
+    target_link_libraries(sherpa-onnx-speaker-segmentation-ascend-compare
+      "-Wl,-rpath,${SHERPA_ONNX_RPATH_ORIGIN}/../lib")
+  endif()
+  install(TARGETS sherpa-onnx-speaker-segmentation-ascend-compare
+    DESTINATION bin)
 endif()
 
 if(NOT BUILD_SHARED_LIBS)

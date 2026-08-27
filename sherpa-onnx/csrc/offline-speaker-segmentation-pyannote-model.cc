@@ -25,36 +25,59 @@
 #include "sherpa-onnx/csrc/session.h"
 #include "sherpa-onnx/csrc/text-utils.h"
 
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+#include "sherpa-onnx/csrc/ascend/offline-speaker-segmentation-pyannote-model-ascend.h"
+#endif
+
 namespace sherpa_onnx {
 
 class OfflineSpeakerSegmentationPyannoteModel::Impl {
  public:
   explicit Impl(const OfflineSpeakerSegmentationModelConfig &config)
-      : config_(config),
-        env_(ORT_LOGGING_LEVEL_ERROR),
-        sess_opts_(GetSessionOptions(config)),
-        allocator_{} {
+      : config_(config), allocator_{} {
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+    if (ToLowerAscii(config_.provider) == "ascend") {
+      ascend_ =
+          std::make_unique<OfflineSpeakerSegmentationPyannoteModelAscend>(
+              config_);
+      return;
+    }
+#endif
+
+    env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR);
+    sess_opts_ =
+        std::make_unique<Ort::SessionOptions>(GetSessionOptions(config_));
     sess_ = std::make_unique<Ort::Session>(
-        env_, SHERPA_ONNX_TO_ORT_PATH(config_.pyannote.model), sess_opts_);
+        *env_, SHERPA_ONNX_TO_ORT_PATH(config_.pyannote.model), *sess_opts_);
     Init(nullptr, 0);
   }
 
   template <typename Manager>
   Impl(Manager *mgr, const OfflineSpeakerSegmentationModelConfig &config)
-      : config_(config),
-        env_(ORT_LOGGING_LEVEL_ERROR),
-        sess_opts_(GetSessionOptions(config)),
-        allocator_{} {
+      : config_(config), allocator_{} {
+    env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_ERROR);
+    sess_opts_ =
+        std::make_unique<Ort::SessionOptions>(GetSessionOptions(config_));
     auto buf = ReadFile(mgr, config_.pyannote.model);
     Init(buf.data(), buf.size());
   }
 
   const OfflineSpeakerSegmentationPyannoteModelMetaData &GetModelMetaData()
       const {
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+    if (ascend_) {
+      return ascend_->GetModelMetaData();
+    }
+#endif
     return meta_data_;
   }
 
   Ort::Value Forward(Ort::Value x) {
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+    if (ascend_) {
+      return ascend_->Forward(std::move(x));
+    }
+#endif
     auto out = sess_->Run({}, input_names_ptr_.data(), &x, 1,
                           output_names_ptr_.data(), output_names_ptr_.size());
 
@@ -65,7 +88,7 @@ class OfflineSpeakerSegmentationPyannoteModel::Impl {
   void Init(void *model_data, size_t model_data_length) {
     if (model_data) {
       sess_ = std::make_unique<Ort::Session>(
-          env_, model_data, model_data_length, sess_opts_);
+          *env_, model_data, model_data_length, *sess_opts_);
     } else if (!sess_) {
       SHERPA_ONNX_LOGE(
           "Please pass model data or initialize the session outside of "
@@ -124,11 +147,15 @@ class OfflineSpeakerSegmentationPyannoteModel::Impl {
 
  private:
   OfflineSpeakerSegmentationModelConfig config_;
-  Ort::Env env_;
-  Ort::SessionOptions sess_opts_;
+  std::unique_ptr<Ort::Env> env_;
+  std::unique_ptr<Ort::SessionOptions> sess_opts_;
   Ort::AllocatorWithDefaultOptions allocator_;
 
   std::unique_ptr<Ort::Session> sess_;
+
+#if SHERPA_ONNX_ENABLE_ASCEND_NPU
+  std::unique_ptr<OfflineSpeakerSegmentationPyannoteModelAscend> ascend_;
+#endif
 
   std::vector<std::string> input_names_;
   std::vector<const char *> input_names_ptr_;

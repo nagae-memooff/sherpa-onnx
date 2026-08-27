@@ -39,3 +39,49 @@ commands to convert it to `3-two-speakers-en.wav`
 ```bash
 sox ML16091-Audio.mp3 -r 16k 3-two-speakers-en.wav
 ```
+
+## Ascend 310P batch-1 model
+
+CANN 9.1 requires a static graph and 4-D inputs for InstanceNormalization on
+Ascend 310P. Prepare the existing Pyannote segmentation 3.0 ONNX model without
+overwriting it:
+
+```bash
+python3 prepare-ascend-310p-b1.py \
+  sherpa-onnx-pyannote-segmentation-3-0.onnx \
+  sherpa-onnx-pyannote-segmentation-3-0_atc_b1.onnx
+```
+
+The script fixes the input to `[1,1,160000]`, replaces the zero LSTM initial
+states with constants, and wraps each 3-D InstanceNormalization input as 4-D.
+For the production model, ONNX Runtime produces exactly the same output before
+and after this preprocessing.
+
+Compile the prepared model for Atlas 300I Duo / Ascend 310P3:
+
+```bash
+atc \
+  --framework=5 \
+  --model=sherpa-onnx-pyannote-segmentation-3-0_atc_b1.onnx \
+  --output=sherpa-onnx-pyannote-segmentation-3-0_b1 \
+  --input_format=ND \
+  --input_shape="x:1,1,160000" \
+  --soc_version=Ascend310P3 \
+  --fusion_switch_file=ascend-310p-fusion-all-off.json
+```
+
+The generated OM accepts float32 `[1,1,160000]` and returns float32
+`[1,589,7]`.
+
+After building sherpa-onnx with `SHERPA_ONNX_ENABLE_ASCEND_NPU=ON`, compare
+the CPU ONNX output and Ascend OM output on the same 10-second audio window:
+
+```bash
+sherpa-onnx-speaker-segmentation-ascend-compare \
+  sherpa-onnx-pyannote-segmentation-3-0.onnx \
+  sherpa-onnx-pyannote-segmentation-3-0_b1.om \
+  3-two-speakers-en.wav \
+  5
+```
+
+This first implementation supports `segmentation_batch_size=1` only.

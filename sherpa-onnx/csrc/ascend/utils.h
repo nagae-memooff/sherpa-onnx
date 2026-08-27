@@ -121,6 +121,10 @@ class AclModel {
     return input_shapes_;
   }
 
+  const std::vector<aclDataType> &GetInputDataTypes() const {
+    return input_data_types_;
+  }
+
   const std::vector<std::string> &GetOutputNames() const {
     return output_names_;
   }
@@ -129,13 +133,19 @@ class AclModel {
     return output_shapes_;
   }
 
+  const std::vector<aclDataType> &GetOutputDataTypes() const {
+    return output_data_types_;
+  }
+
  private:
   void Init();
   void InitInputNames();
   void InitInputShapes();
+  void InitInputDataTypes();
 
   void InitOutputNames();
   void InitOutputShapes();
+  void InitOutputDataTypes();
 
  private:
   uint32_t model_id_ = 0;
@@ -144,9 +154,11 @@ class AclModel {
 
   std::vector<std::string> input_names_;
   std::vector<std::vector<int64_t>> input_shapes_;
+  std::vector<aclDataType> input_data_types_;
 
   std::vector<std::string> output_names_;
   std::vector<std::vector<int64_t>> output_shapes_;
+  std::vector<aclDataType> output_data_types_;
 };
 
 class AclMdlDataset {
