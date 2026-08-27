@@ -40,7 +40,7 @@ commands to convert it to `3-two-speakers-en.wav`
 sox ML16091-Audio.mp3 -r 16k 3-two-speakers-en.wav
 ```
 
-## Ascend 310P batch-1 model
+## Ascend 310P static-batch model
 
 CANN 9.1 requires a static graph and 4-D inputs for InstanceNormalization on
 Ascend 310P. Prepare the existing Pyannote segmentation 3.0 ONNX model without
@@ -49,29 +49,32 @@ overwriting it:
 ```bash
 python3 prepare-ascend-310p-b1.py \
   sherpa-onnx-pyannote-segmentation-3-0.onnx \
-  sherpa-onnx-pyannote-segmentation-3-0_atc_b1.onnx
+  sherpa-onnx-pyannote-segmentation-3-0_atc_b4.onnx \
+  --batch-size 4
 ```
 
-The script fixes the input to `[1,1,160000]`, replaces the zero LSTM initial
-states with constants, and wraps each 3-D InstanceNormalization input as 4-D.
-For the production model, ONNX Runtime produces exactly the same output before
-and after this preprocessing.
+The script supports static batch sizes from 1 through 16. It fixes the input to
+`[B,1,160000]`, replaces the zero LSTM initial states with `[2,B,128]`
+constants, and wraps each 3-D InstanceNormalization input as 4-D. For the
+production model, ONNX Runtime produces exactly the same output before and
+after this preprocessing.
 
 Compile the prepared model for Atlas 300I Duo / Ascend 310P3:
 
 ```bash
 atc \
   --framework=5 \
-  --model=sherpa-onnx-pyannote-segmentation-3-0_atc_b1.onnx \
-  --output=sherpa-onnx-pyannote-segmentation-3-0_b1 \
+  --model=sherpa-onnx-pyannote-segmentation-3-0_atc_b4.onnx \
+  --output=sherpa-onnx-pyannote-segmentation-3-0_b4 \
   --input_format=ND \
-  --input_shape="x:1,1,160000" \
-  --soc_version=Ascend310P3 \
-  --fusion_switch_file=ascend-310p-fusion-all-off.json
+  --input_shape="x:4,1,160000" \
+  --soc_version=Ascend310P3
 ```
 
-The generated OM accepts float32 `[1,1,160000]` and returns float32
-`[1,589,7]`.
+The generated OM accepts float32 `[B,1,160000]` and returns float32
+`[B,589,7]`. The rewritten production model compiles with the default CANN 9.1
+fusion rules. `ascend-310p-fusion-all-off.json` is retained as a conservative
+fallback for compiler diagnostics.
 
 After building sherpa-onnx with `SHERPA_ONNX_ENABLE_ASCEND_NPU=ON`, compare
 the CPU ONNX output and Ascend OM output on the same 10-second audio window:
@@ -79,9 +82,12 @@ the CPU ONNX output and Ascend OM output on the same 10-second audio window:
 ```bash
 sherpa-onnx-speaker-segmentation-ascend-compare \
   sherpa-onnx-pyannote-segmentation-3-0.onnx \
-  sherpa-onnx-pyannote-segmentation-3-0_b1.om \
+  sherpa-onnx-pyannote-segmentation-3-0_b4.om \
   3-two-speakers-en.wav \
-  5
+  5 \
+  4
 ```
 
-This first implementation supports `segmentation_batch_size=1` only.
+The last argument is the batch size. At runtime, set
+`segmentation_batch_size` no higher than the static batch of the OM. A short
+final batch repeats its last real item internally and returns only real outputs.

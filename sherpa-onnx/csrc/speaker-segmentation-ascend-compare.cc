@@ -37,12 +37,13 @@ struct RunResult {
 };
 
 RunResult RunModel(const OfflineSpeakerSegmentationPyannoteModel &model,
-                   std::vector<float> *samples, int32_t iterations) {
+                   std::vector<float> *samples, int32_t batch_size,
+                   int32_t iterations) {
   RunResult result;
   double elapsed_ms = 0;
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
-  const std::array<int64_t, 3> input_shape{1, 1, kWindowSize};
+  const std::array<int64_t, 3> input_shape{batch_size, 1, kWindowSize};
 
   for (int32_t i = 0; i != iterations; ++i) {
     Ort::Value input = Ort::Value::CreateTensor<float>(
@@ -70,16 +71,18 @@ int32_t ArgMax(const float *p, int32_t size) {
 }
 
 int Compare(int32_t argc, char **argv, bool *acl_initialized) {
-  if (argc < 4 || argc > 5) {
+  if (argc < 4 || argc > 6) {
     std::cerr << "Usage: " << argv[0]
               << " <cpu-model.onnx> <ascend-model.om> <audio.wav> "
-                 "[iterations=5]\n";
+                 "[iterations=5] [batch-size=1]\n";
     return EXIT_FAILURE;
   }
 
-  const int32_t iterations = argc == 5 ? std::stoi(argv[4]) : 5;
-  if (iterations <= 0) {
-    std::cerr << "iterations must be greater than 0\n";
+  const int32_t iterations = argc >= 5 ? std::stoi(argv[4]) : 5;
+  const int32_t batch_size = argc == 6 ? std::stoi(argv[5]) : 1;
+  if (iterations <= 0 || batch_size < 1 || batch_size > 16) {
+    std::cerr << "iterations must be greater than 0 and batch-size must be "
+                 "in [1, 16]\n";
     return EXIT_FAILURE;
   }
 
@@ -97,9 +100,19 @@ int Compare(int32_t argc, char **argv, bool *acl_initialized) {
     return EXIT_FAILURE;
   }
 
-  std::vector<float> samples(kWindowSize, 0);
-  std::copy_n(wave.data(), std::min(wave.size(), samples.size()),
-              samples.data());
+  std::vector<float> samples(static_cast<size_t>(batch_size) * kWindowSize,
+                             0);
+  constexpr int64_t kWindowShift = kSampleRate;
+  for (int32_t i = 0; i != batch_size; ++i) {
+    const int64_t begin = static_cast<int64_t>(i) * kWindowShift;
+    if (begin >= static_cast<int64_t>(wave.size())) {
+      break;
+    }
+    const size_t count = std::min<size_t>(
+        kWindowSize, wave.size() - static_cast<size_t>(begin));
+    std::copy_n(wave.data() + begin, count,
+                samples.data() + static_cast<size_t>(i) * kWindowSize);
+  }
 
   OfflineSpeakerSegmentationModelConfig cpu_config;
   cpu_config.pyannote.model = argv[1];
@@ -114,11 +127,14 @@ int Compare(int32_t argc, char **argv, bool *acl_initialized) {
   OfflineSpeakerSegmentationPyannoteModel ascend(ascend_config);
   *acl_initialized = true;
 
-  (void)RunModel(ascend, &samples, 1);
-  RunResult cpu_result = RunModel(cpu, &samples, iterations);
-  RunResult ascend_result = RunModel(ascend, &samples, iterations);
+  (void)RunModel(ascend, &samples, batch_size, 1);
+  RunResult cpu_result =
+      RunModel(cpu, &samples, batch_size, iterations);
+  RunResult ascend_result =
+      RunModel(ascend, &samples, batch_size, iterations);
 
-  const std::vector<int64_t> expected_shape{1, kNumFrames, kNumClasses};
+  const std::vector<int64_t> expected_shape{batch_size, kNumFrames,
+                                            kNumClasses};
   if (cpu_result.shape != expected_shape ||
       ascend_result.shape != expected_shape ||
       cpu_result.output.size() != ascend_result.output.size()) {
@@ -138,7 +154,8 @@ int Compare(int32_t argc, char **argv, bool *acl_initialized) {
     squared_sum += diff * diff;
     max_abs = std::max(max_abs, diff);
   }
-  for (int64_t frame = 0; frame != kNumFrames; ++frame) {
+  const int64_t total_frames = batch_size * kNumFrames;
+  for (int64_t frame = 0; frame != total_frames; ++frame) {
     const size_t offset = static_cast<size_t>(frame * kNumClasses);
     if (ArgMax(cpu_result.output.data() + offset, kNumClasses) ==
         ArgMax(ascend_result.output.data() + offset, kNumClasses)) {
@@ -147,10 +164,11 @@ int Compare(int32_t argc, char **argv, bool *acl_initialized) {
   }
 
   const double count = static_cast<double>(cpu_result.output.size());
-  const double frame_count = static_cast<double>(kNumFrames);
+  const double frame_count = static_cast<double>(total_frames);
   std::cout << std::fixed << std::setprecision(9)
-            << "input_samples=" << samples.size() << "\n"
-            << "output_frames=" << kNumFrames << "\n"
+            << "batch_size=" << batch_size << "\n"
+            << "input_samples_per_item=" << kWindowSize << "\n"
+            << "output_frames_per_item=" << kNumFrames << "\n"
             << "output_classes=" << kNumClasses << "\n"
             << "mean_absolute_error=" << abs_sum / count << "\n"
             << "root_mean_squared_error="
@@ -160,6 +178,10 @@ int Compare(int32_t argc, char **argv, bool *acl_initialized) {
             << "argmax_agreement=" << argmax_matches / frame_count << "\n"
             << "cpu_average_ms=" << cpu_result.average_ms << "\n"
             << "ascend_average_ms=" << ascend_result.average_ms << "\n"
+            << "cpu_average_ms_per_item="
+            << cpu_result.average_ms / batch_size << "\n"
+            << "ascend_average_ms_per_item="
+            << ascend_result.average_ms / batch_size << "\n"
             << "speedup="
             << (ascend_result.average_ms >
                         std::numeric_limits<double>::epsilon()

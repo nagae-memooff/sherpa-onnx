@@ -12,7 +12,7 @@
 namespace sherpa_onnx {
 
 // AscendCL backend for the production pyannote segmentation 3.0 model.
-// The first implementation intentionally supports only a static batch-1 OM.
+// Supports a static-batch OM and pads a short final batch internally.
 class OfflineSpeakerSegmentationPyannoteModelAscend {
  public:
   explicit OfflineSpeakerSegmentationPyannoteModelAscend(
@@ -24,8 +24,8 @@ class OfflineSpeakerSegmentationPyannoteModelAscend {
       const;
 
   /**
-   * @param x A float32 tensor of shape (1, 1, 160000).
-   * @return A float32 tensor of shape (1, 589, 7).
+   * @param x A float32 tensor of shape (B, 1, 160000).
+   * @return A float32 tensor of shape (B, 589, 7).
    */
   Ort::Value Forward(Ort::Value x) const;
 

@@ -15,9 +15,10 @@ import onnx
 from onnx import helper, numpy_helper, shape_inference
 
 
-INPUT_SHAPE = (1, 1, 160000)
-OUTPUT_SHAPE = (1, 589, 7)
-LSTM_STATE_SHAPE = (2, 1, 128)
+WINDOW_SIZE = 160000
+NUM_FRAMES = 589
+NUM_CLASSES = 7
+LSTM_HIDDEN_SIZE = 128
 
 
 def get_shape(value_info):
@@ -64,13 +65,17 @@ def prune_unused_graph(model):
     model.graph.initializer.extend(kept_initializers)
 
 
-def prepare(source: Path, output: Path):
+def prepare(source: Path, output: Path, batch_size: int):
     model = onnx.load(source)
     if len(model.graph.input) != 1 or model.graph.input[0].name != "x":
         raise ValueError("Expected one model input named 'x'")
 
+    input_shape = (batch_size, 1, WINDOW_SIZE)
+    output_shape = (batch_size, NUM_FRAMES, NUM_CLASSES)
+    lstm_state_shape = (2, batch_size, LSTM_HIDDEN_SIZE)
+
     for dim, value in zip(
-        model.graph.input[0].type.tensor_type.shape.dim, INPUT_SHAPE
+        model.graph.input[0].type.tensor_type.shape.dim, input_shape
     ):
         dim.ClearField("dim_param")
         dim.dim_value = value
@@ -84,7 +89,7 @@ def prepare(source: Path, output: Path):
     model.graph.initializer.extend(
         [
             numpy_helper.from_array(
-                np.zeros(LSTM_STATE_SHAPE, dtype=np.float32), state_name
+                np.zeros(lstm_state_shape, dtype=np.float32), state_name
             ),
             numpy_helper.from_array(
                 np.asarray([2], dtype=np.int64), axes_name
@@ -150,29 +155,39 @@ def prepare(source: Path, output: Path):
 
     model = shape_inference.infer_shapes(model)
     onnx.checker.check_model(model)
-    if get_shape(model.graph.input[0]) != INPUT_SHAPE:
+    if get_shape(model.graph.input[0]) != input_shape:
         raise ValueError(
             f"Unexpected prepared input: {get_shape(model.graph.input[0])}"
         )
-    if get_shape(model.graph.output[0]) != OUTPUT_SHAPE:
+    if get_shape(model.graph.output[0]) != output_shape:
         raise ValueError(
             f"Unexpected prepared output: {get_shape(model.graph.output[0])}"
         )
 
     onnx.save(model, output)
     print(f"Saved Ascend ATC input model to {output}")
-    print(f"input_shape={INPUT_SHAPE}")
-    print(f"output_shape={OUTPUT_SHAPE}")
+    print(f"input_shape={input_shape}")
+    print(f"output_shape={output_shape}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path, help="Original Pyannote ONNX model")
-    parser.add_argument("output", type=Path, help="Prepared batch-1 ONNX model")
+    parser.add_argument(
+        "output", type=Path, help="Prepared static-batch ONNX model"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        choices=range(1, 17),
+        metavar="1..16",
+        help="Static batch size to prepare (default: 1)",
+    )
     args = parser.parse_args()
     if args.source.resolve() == args.output.resolve():
         raise ValueError("Output must not overwrite the original ONNX model")
-    prepare(args.source, args.output)
+    prepare(args.source, args.output, args.batch_size)
 
 
 if __name__ == "__main__":
