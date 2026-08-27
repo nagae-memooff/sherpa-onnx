@@ -21,7 +21,6 @@ namespace sherpa_onnx {
 
 namespace {
 
-constexpr int32_t kDeviceId = 0;
 constexpr int64_t kInputChannels = 1;
 constexpr int64_t kWindowSize = 160000;
 constexpr int64_t kNumFrames = 589;
@@ -55,11 +54,12 @@ class OfflineSpeakerSegmentationPyannoteModelAscend::Impl {
       : config_(config) {
     EnsureAclInitialized();
 
-    aclError ret = aclrtSetDevice(kDeviceId);
+    aclError ret = aclrtSetDevice(config_.device);
     SHERPA_ONNX_ASCEND_CHECK(
-        ret, "Failed to call aclrtSetDevice with device id: %d", kDeviceId);
+        ret, "Failed to call aclrtSetDevice with device id: %d",
+        config_.device);
 
-    context_ = std::make_unique<AclContext>(kDeviceId);
+    context_ = std::make_unique<AclContext>(config_.device);
     ret = aclrtSetCurrentContext(*context_);
     SHERPA_ONNX_ASCEND_CHECK(ret, "Failed to call aclrtSetCurrentContext");
 

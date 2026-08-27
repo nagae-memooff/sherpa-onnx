@@ -33,9 +33,17 @@ void SpeakerEmbeddingExtractorConfig::Register(ParseOptions *po) {
 
   po->Register("provider", &provider,
                "Specify a provider to use: cpu, cuda, coreml, ascend");
+
+  po->Register("device", &device,
+               "Accelerator device index for the Ascend provider");
 }
 
 bool SpeakerEmbeddingExtractorConfig::Validate() const {
+  if (device < 0) {
+    SHERPA_ONNX_LOGE("device should be >= 0. Given %d", device);
+    return false;
+  }
+
   if (model.empty()) {
     SHERPA_ONNX_LOGE("Please provide a speaker embedding extractor model");
     return false;
@@ -57,7 +65,8 @@ std::string SpeakerEmbeddingExtractorConfig::ToString() const {
   os << "model=\"" << model << "\", ";
   os << "num_threads=" << num_threads << ", ";
   os << "debug=" << (debug ? "True" : "False") << ", ";
-  os << "provider=\"" << provider << "\")";
+  os << "provider=\"" << provider << "\", ";
+  os << "device=" << device << ")";
 
   return os.str();
 }

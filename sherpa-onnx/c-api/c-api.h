@@ -3151,6 +3151,8 @@ typedef struct SherpaOnnxSpeakerEmbeddingExtractorConfig {
   int32_t debug;
   /** Execution provider such as `"cpu"`. */
   const char *provider;
+  /** Accelerator device index. The default zero preserves existing behavior. */
+  int32_t device;
 } SherpaOnnxSpeakerEmbeddingExtractorConfig;
 
 /** @brief Opaque speaker embedding extractor handle. */
@@ -3901,6 +3903,8 @@ typedef struct SherpaOnnxOfflineSpeakerSegmentationModelConfig {
   int32_t debug;
   /** Execution provider such as `"cpu"`. */
   const char *provider;
+  /** Accelerator device index. The default zero preserves existing behavior. */
+  int32_t device;
 } SherpaOnnxOfflineSpeakerSegmentationModelConfig;
 
 /**

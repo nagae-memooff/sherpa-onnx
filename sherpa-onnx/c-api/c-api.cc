@@ -2301,6 +2301,7 @@ GetSpeakerEmbeddingExtractorConfig(
   c.num_threads = GetNumThreads(config->num_threads);
   c.debug = config->debug;
   c.provider = SHERPA_ONNX_OR(config->provider, "cpu");
+  c.device = config->device;
   if (c.provider.empty()) {
     c.provider = "cpu";
   }
@@ -3222,6 +3223,7 @@ GetOfflineSpeakerDiarizationConfig(
   sd_config.segmentation.debug = config->segmentation.debug;
   sd_config.segmentation.provider =
       SHERPA_ONNX_OR(config->segmentation.provider, "cpu");
+  sd_config.segmentation.device = config->segmentation.device;
   if (sd_config.segmentation.provider.empty()) {
     sd_config.segmentation.provider = "cpu";
   }
@@ -3232,6 +3234,7 @@ GetOfflineSpeakerDiarizationConfig(
   sd_config.embedding.debug = config->embedding.debug;
   sd_config.embedding.provider =
       SHERPA_ONNX_OR(config->embedding.provider, "cpu");
+  sd_config.embedding.device = config->embedding.device;
   if (sd_config.embedding.provider.empty()) {
     sd_config.embedding.provider = "cpu";
   }

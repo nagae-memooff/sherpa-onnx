@@ -20,10 +20,18 @@ void OfflineSpeakerSegmentationModelConfig::Register(ParseOptions *po) {
                "true to print model information while loading it.");
 
   po->Register("provider", &provider,
-               "Specify a provider to use: cpu, cuda, coreml");
+               "Specify a provider to use: cpu, cuda, coreml, ascend");
+
+  po->Register("device", &device,
+               "Accelerator device index for the Ascend provider");
 }
 
 bool OfflineSpeakerSegmentationModelConfig::Validate() const {
+  if (device < 0) {
+    SHERPA_ONNX_LOGE("device should be >= 0. Given %d", device);
+    return false;
+  }
+
   if (num_threads < 1) {
     SHERPA_ONNX_LOGE("num_threads should be > 0. Given %d", num_threads);
     return false;
@@ -49,7 +57,8 @@ std::string OfflineSpeakerSegmentationModelConfig::ToString() const {
   os << "pyannote=" << pyannote.ToString() << ", ";
   os << "num_threads=" << num_threads << ", ";
   os << "debug=" << (debug ? "True" : "False") << ", ";
-  os << "provider=\"" << provider << "\")";
+  os << "provider=\"" << provider << "\", ";
+  os << "device=" << device << ")";
 
   return os.str();
 }

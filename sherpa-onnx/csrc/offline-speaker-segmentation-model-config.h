@@ -17,6 +17,7 @@ struct OfflineSpeakerSegmentationModelConfig {
   int32_t num_threads = 1;
   bool debug = false;
   std::string provider = "cpu";
+  int32_t device = 0;
 
   OfflineSpeakerSegmentationModelConfig() = default;
 

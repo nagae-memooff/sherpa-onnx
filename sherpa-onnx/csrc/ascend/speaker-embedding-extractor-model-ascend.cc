@@ -18,7 +18,6 @@ namespace sherpa_onnx {
 
 namespace {
 
-constexpr int32_t kDeviceId = 0;
 constexpr int64_t kBatchSize = 1;
 constexpr int64_t kFeatureDim = 80;
 constexpr int64_t kEmbeddingDim = 256;
@@ -43,11 +42,12 @@ class SpeakerEmbeddingExtractorModelAscend::Impl {
       : config_(config) {
     EnsureAclInitialized();
 
-    aclError ret = aclrtSetDevice(kDeviceId);
+    aclError ret = aclrtSetDevice(config_.device);
     SHERPA_ONNX_ASCEND_CHECK(
-        ret, "Failed to call aclrtSetDevice with device id: %d", kDeviceId);
+        ret, "Failed to call aclrtSetDevice with device id: %d",
+        config_.device);
 
-    context_ = std::make_unique<AclContext>(kDeviceId);
+    context_ = std::make_unique<AclContext>(config_.device);
     ret = aclrtSetCurrentContext(*context_);
     SHERPA_ONNX_ASCEND_CHECK(ret, "Failed to call aclrtSetCurrentContext");
 

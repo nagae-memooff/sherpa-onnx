@@ -19,6 +19,7 @@ struct SpeakerEmbeddingExtractorConfig {
   int32_t num_threads = 1;
   bool debug = false;
   std::string provider = "cpu";
+  int32_t device = 0;
 
   SpeakerEmbeddingExtractorConfig() = default;
   SpeakerEmbeddingExtractorConfig(const std::string &model, int32_t num_threads,
