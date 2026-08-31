@@ -3328,6 +3328,16 @@ int32_t SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments(
   return r->impl.NumSegments();
 }
 
+double SherpaOnnxOfflineSpeakerDiarizationResultGetSegmentationDurationSeconds(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
+  return r->impl.SegmentationDurationSeconds();
+}
+
+double SherpaOnnxOfflineSpeakerDiarizationResultGetEmbeddingDurationSeconds(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
+  return r->impl.EmbeddingDurationSeconds();
+}
+
 const SherpaOnnxOfflineSpeakerDiarizationSegment *
 SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime(
     const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
@@ -3447,6 +3457,20 @@ int32_t SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments(
   SHERPA_ONNX_LOGE(
       "Speaker diarization is not enabled. Please rebuild sherpa-onnx");
   return 0;
+}
+
+double SherpaOnnxOfflineSpeakerDiarizationResultGetSegmentationDurationSeconds(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
+  SHERPA_ONNX_LOGE(
+      "Speaker diarization is not enabled. Please rebuild sherpa-onnx");
+  return -1;
+}
+
+double SherpaOnnxOfflineSpeakerDiarizationResultGetEmbeddingDurationSeconds(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r) {
+  SHERPA_ONNX_LOGE(
+      "Speaker diarization is not enabled. Please rebuild sherpa-onnx");
+  return -1;
 }
 
 const SherpaOnnxOfflineSpeakerDiarizationSegment *

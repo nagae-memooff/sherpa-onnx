@@ -4047,6 +4047,26 @@ SHERPA_ONNX_API int32_t SherpaOnnxOfflineSpeakerDiarizationResultGetNumSpeakers(
 SHERPA_ONNX_API int32_t SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments(
     const SherpaOnnxOfflineSpeakerDiarizationResult *r);
 
+#define SHERPA_ONNX_HAS_OFFLINE_SPEAKER_DIARIZATION_STAGE_DURATIONS 1
+
+/**
+ * @brief Return the speaker segmentation stage wall time in seconds.
+ *
+ * @return A non-negative duration, or -1 if the stage was not run.
+ */
+SHERPA_ONNX_API double
+SherpaOnnxOfflineSpeakerDiarizationResultGetSegmentationDurationSeconds(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r);
+
+/**
+ * @brief Return the speaker embedding stage wall time in seconds.
+ *
+ * @return A non-negative duration, or -1 if the stage was not run.
+ */
+SHERPA_ONNX_API double
+SherpaOnnxOfflineSpeakerDiarizationResultGetEmbeddingDurationSeconds(
+    const SherpaOnnxOfflineSpeakerDiarizationResult *r);
+
 /**
  * @brief Return segments sorted by start time.
  *
