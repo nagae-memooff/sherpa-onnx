@@ -196,8 +196,14 @@ class OfflineSpeakerDiarizationPyannoteImpl
     bool timing_enabled = config_.segmentation.debug ||
                           config_.embedding.debug || config_.enable_profiling;
     Timer total_timer(timing_enabled);
-    Timer segmentation_timer(timing_enabled);
+    Timer segmentation_timer(true);
     bool stopped = false;
+    double segmentation_seconds = -1;
+    double embedding_seconds = -1;
+    auto with_stage_durations = [&](OfflineSpeakerDiarizationResult result) {
+      result.SetStageDurations(segmentation_seconds, embedding_seconds);
+      return result;
+    };
     std::unique_ptr<DiarizationProfilingInfo> profiling;
     if (config_.enable_profiling) {
       profiling = std::make_unique<DiarizationProfilingInfo>();
@@ -223,7 +229,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     } else {
       segmentation_guard.ReleaseNow();
     }
-    double segmentation_seconds = segmentation_timer.Elapsed();
+    segmentation_seconds = segmentation_timer.Elapsed();
     LogStageTime("segmentation", segmentation_seconds);
     if (profiling) {
       LogSegmentationProfile(profiling->segmentation, segmentation_seconds, n);
@@ -231,12 +237,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
     // segmentations[i] is for chunk_i
     // Each matrix is of shape (num_frames, num_powerset_classes)
     if (stopped) {
-      return CreateStoppedResult();
+      return with_stage_durations(CreateStoppedResult());
     }
 
     if (segmentations.empty()) {
       // Timings are intentionally not logged since n can be non-positive.
-      return {};
+      return with_stage_durations({});
     }
     std::vector<Matrix2DInt32> labels;
     labels.reserve(segmentations.size());
@@ -251,7 +257,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
       OfflineSpeakerDiarizationResult result =
           HandleOneChunkSpecialCase(labels[0], n);
       LogTotalTime(total_timer.Elapsed(), n);
-      return result;
+      return with_stage_durations(std::move(result));
     }
 
     // labels[i] is a 0-1 matrix of shape (num_frames, num_speakers)
@@ -262,7 +268,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     if (speakers_per_frame.maxCoeff() == 0) {
       LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No speakers found in the audio samples");
-      return {};
+      return with_stage_durations({});
     }
 
     auto chunk_speaker_samples_list_pair = GetChunkSpeakerSampleIndexes(labels);
@@ -270,7 +276,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     if (chunk_speaker_samples_list_pair.second.empty()) {
       LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
-      return {};
+      return with_stage_durations({});
     }
 
     // The embedding model may output NaN. valid_indexes contains indexes
@@ -279,6 +285,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     std::vector<int32_t> valid_indexes;
     valid_indexes.reserve(chunk_speaker_samples_list_pair.second.size());
 
+    Timer embedding_timer(true);
     if (profiling) {
       RunProfiled<true>(&profiling->embedding.model_init_seconds, [&]() {
         EnsureEmbeddingExtractor();
@@ -289,7 +296,6 @@ class OfflineSpeakerDiarizationPyannoteImpl
     }
     StageResourceGuard embedding_guard(
         [this]() { ReleaseEmbeddingExtractor(); });
-    Timer embedding_timer(timing_enabled);
     Matrix2D embeddings;
     if (profiling) {
       embeddings = ComputeEmbeddings<true>(
@@ -310,14 +316,14 @@ class OfflineSpeakerDiarizationPyannoteImpl
     } else {
       embedding_guard.ReleaseNow();
     }
-    double embedding_seconds = embedding_timer.Elapsed();
+    embedding_seconds = embedding_timer.Elapsed();
     LogStageTime("embedding", embedding_seconds);
     if (profiling) {
       LogEmbeddingProfile(profiling->embedding, embedding_seconds, n);
     }
 
     if (stopped) {
-      return CreateStoppedResult();
+      return with_stage_durations(CreateStoppedResult());
     }
 
     if (valid_indexes.size() != chunk_speaker_samples_list_pair.second.size()) {
@@ -345,12 +351,12 @@ class OfflineSpeakerDiarizationPyannoteImpl
     if (embeddings.rows() == 0) {
       LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No valid speaker embeddings found in the audio samples");
-      return {};
+      return with_stage_durations({});
     }
 
     if (ShouldStop(callback, valid_indexes.size(), embeddings.rows(),
                    callback_arg)) {
-      return CreateStoppedResult();
+      return with_stage_durations(CreateStoppedResult());
     }
 
     Timer clustering_timer(timing_enabled);
@@ -360,7 +366,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
 
     if (ShouldStop(callback, valid_indexes.size(), embeddings.rows(),
                    callback_arg)) {
-      return CreateStoppedResult();
+      return with_stage_durations(CreateStoppedResult());
     }
     embeddings.resize(0, 0);
     std::vector<int32_t>().swap(valid_indexes);
@@ -368,7 +374,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     if (cluster_labels.empty()) {
       LogTotalTime(total_timer.Elapsed(), n);
       SHERPA_ONNX_LOGE("No speakers found in the audio samples");
-      return {};
+      return with_stage_durations({});
     }
 
     // 如果只得到 1 个簇，直接构造结果返回，避免后续重标记/合并路径
@@ -387,7 +393,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
         }
         auto result = ComputeResult(final_labels);
         LogTotalTime(total_timer.Elapsed(), n);
-        return result;
+        return with_stage_durations(std::move(result));
       }
     }
 
@@ -408,7 +414,7 @@ class OfflineSpeakerDiarizationPyannoteImpl
     auto result = ComputeResult(final_labels);
 
     LogTotalTime(total_timer.Elapsed(), n);
-    return result;
+    return with_stage_durations(std::move(result));
   }
 
  private:

@@ -48,6 +48,18 @@ class OfflineSpeakerDiarizationResult {
   void SetStopped(bool stopped) { stopped_ = stopped; }
   bool IsStopped() const { return stopped_; }
 
+  void SetStageDurations(double segmentation_seconds,
+                         double embedding_seconds) {
+    segmentation_duration_seconds_ = segmentation_seconds;
+    embedding_duration_seconds_ = embedding_seconds;
+  }
+  double SegmentationDurationSeconds() const {
+    return segmentation_duration_seconds_;
+  }
+  double EmbeddingDurationSeconds() const {
+    return embedding_duration_seconds_;
+  }
+
   // Number of distinct speakers contained in this object at this point
   int32_t NumSpeakers() const;
 
@@ -64,6 +76,8 @@ class OfflineSpeakerDiarizationResult {
  private:
   std::vector<OfflineSpeakerDiarizationSegment> segments_;
   bool stopped_ = false;
+  double segmentation_duration_seconds_ = -1;
+  double embedding_duration_seconds_ = -1;
 };
 
 }  // namespace sherpa_onnx
