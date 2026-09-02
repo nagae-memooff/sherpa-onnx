@@ -238,7 +238,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_linux.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_linux.zip to_be_published
           ls -lh /tmp/sherpa_onnx_linux.zip
 
       - uses: actions/upload-artifact@v4
@@ -312,16 +312,13 @@ jobs:
           unzip sherpa-onnx-${SHERPA_ONNX_VERSION}-macos-shared-onnxruntime-static.xcframework.zip
           rm sherpa-onnx-${SHERPA_ONNX_VERSION}-macos-shared-onnxruntime-static.xcframework.zip
 
-          mv sherpa-onnx.xcframework sherpa_onnx_macos/SherpaOnnxC.xcframework
+          mv sherpa-onnx.xcframework sherpa_onnx_macos/sherpa-onnx.xcframework
 
-          ls -lh sherpa_onnx_macos/SherpaOnnxC.xcframework/
+          ls -lh sherpa_onnx_macos/sherpa-onnx.xcframework/
 
       - name: Prepare for publish
         shell: bash
         run: |
-          rm -f flutter/sherpa_onnx_macos/macos/libsherpa-onnx-c-api.dylib
-          rm -f flutter/sherpa_onnx_macos/macos/libonnxruntime.dylib
-
           mv -v flutter/sherpa_onnx_macos /tmp/to_be_published
 
           ls -lh /tmp/to_be_published/macos
@@ -338,7 +335,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_macos.zip to_be_published
+          zip -r -y -y /tmp/sherpa_onnx_macos.zip to_be_published
           ls -lh /tmp/sherpa_onnx_macos.zip
 
       - uses: actions/upload-artifact@v4
@@ -437,17 +434,10 @@ jobs:
 
       - uses: dart-lang/setup-dart@v1
 
-      - name: Zip package for inspection
-        shell: bash
-        run: |
-          cd /tmp
-          zip -r /tmp/sherpa_onnx_windows.zip to_be_published
-          ls -lh /tmp/sherpa_onnx_windows.zip
-
       - uses: actions/upload-artifact@v4
         with:
           name: package-sherpa_onnx_windows
-          path: /tmp/sherpa_onnx_windows.zip
+          path: /tmp/to_be_published
 
       - name: Release
         shell: bash
@@ -549,7 +539,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_android_arm64.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_android_arm64.zip to_be_published
           ls -lh /tmp/sherpa_onnx_android_arm64.zip
 
       - uses: actions/upload-artifact@v4
@@ -659,7 +649,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_android_armeabi.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_android_armeabi.zip to_be_published
           ls -lh /tmp/sherpa_onnx_android_armeabi.zip
 
       - uses: actions/upload-artifact@v4
@@ -769,7 +759,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_android_x86.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_android_x86.zip to_be_published
           ls -lh /tmp/sherpa_onnx_android_x86.zip
 
       - uses: actions/upload-artifact@v4
@@ -879,7 +869,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_android_x86_64.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_android_x86_64.zip to_be_published
           ls -lh /tmp/sherpa_onnx_android_x86_64.zip
 
       - uses: actions/upload-artifact@v4
@@ -955,7 +945,7 @@ jobs:
           unzip sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-shared-onnxruntime-static.xcframework.zip
           rm sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-shared-onnxruntime-static.xcframework.zip
 
-          mv sherpa-onnx.xcframework sherpa_onnx_ios/SherpaOnnxC.xcframework
+          mv SherpaOnnxC.xcframework sherpa_onnx_ios/SherpaOnnxC.xcframework
 
           ls -lh sherpa_onnx_ios/SherpaOnnxC.xcframework/
 
@@ -978,7 +968,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_ios.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_ios.zip to_be_published
           ls -lh /tmp/sherpa_onnx_ios.zip
 
       - uses: actions/upload-artifact@v4
@@ -1093,7 +1083,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx_web.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx_web.zip to_be_published
           ls -lh /tmp/sherpa_onnx_web.zip
 
       - uses: actions/upload-artifact@v4
@@ -1169,7 +1159,7 @@ jobs:
         shell: bash
         run: |
           cd /tmp
-          zip -r /tmp/sherpa_onnx.zip to_be_published
+          zip -r -y /tmp/sherpa_onnx.zip to_be_published
           ls -lh /tmp/sherpa_onnx.zip
 
       - uses: actions/upload-artifact@v4

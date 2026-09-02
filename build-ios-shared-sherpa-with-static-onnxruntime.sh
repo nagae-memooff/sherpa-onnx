@@ -25,7 +25,8 @@ set -e
 dir=build-ios-shared-sherpa-with-static-onnxruntime
 mkdir -p $dir
 cd $dir
-onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.27.1}
+
+onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.28.1}
 onnxruntime_dir=ios-onnxruntime/$onnxruntime_version
 
 CMAKE_VERBOSE_MAKEFILE=${CMAKE_VERBOSE_MAKEFILE:-OFF}
@@ -175,7 +176,7 @@ lipo \
   -output \
     ios-arm64_x86_64-simulator/libsherpa-onnx-c-api.dylib
 
-rm -rf sherpa-onnx.xcframework
+rm -rf SherpaOnnxC.xcframework
 
 # Create framework bundles so SPM can resolve the module
 create_framework() {
@@ -212,9 +213,9 @@ MEOF
   <key>CFBundleExecutable</key>
   <string>SherpaOnnxC</string>
   <key>CFBundleVersion</key>
-  <string>20260810</string>
+  <string>20260901</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.13.5</string>
+  <string>1.13.7</string>
   <key>MinimumOSVersion</key>
   <string>13.0</string>
   <key>CFBundleSupportedPlatforms</key>
@@ -227,6 +228,9 @@ PEOF
 
   # Fix dylib install name
   install_name_tool -id @rpath/SherpaOnnxC.framework/SherpaOnnxC $fw_dir/SherpaOnnxC
+
+  # Ad-hoc sign the framework binary so Xcode can embed and re-sign it
+  codesign --force --sign - $fw_dir/SherpaOnnxC
 }
 
 create_framework ios-arm64/libsherpa-onnx-c-api.dylib ios-arm64
@@ -235,9 +239,9 @@ create_framework ios-arm64_x86_64-simulator/libsherpa-onnx-c-api.dylib ios-arm64
 xcodebuild -create-xcframework \
   -framework "ios-arm64/SherpaOnnxC.framework" \
   -framework "ios-arm64_x86_64-simulator/SherpaOnnxC.framework" \
-  -output sherpa-onnx.xcframework
+  -output SherpaOnnxC.xcframework
 
-cd sherpa-onnx.xcframework
+cd SherpaOnnxC.xcframework
 echo "PWD: $PWD"
 ls -lh
 echo "---"
@@ -247,7 +251,7 @@ cd ..
 
 SHERPA_ONNX_VERSION=v$(grep "SHERPA_ONNX_VERSION" ../CMakeLists.txt | cut -d " " -f 2 | cut -d '"' -f 2)
 rm -f sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-shared-onnxruntime-static.xcframework.zip
-zip -r -y sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-shared-onnxruntime-static.xcframework.zip sherpa-onnx.xcframework
+zip -r -y sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-shared-onnxruntime-static.xcframework.zip SherpaOnnxC.xcframework
 
 echo "Checksum:"
 swift package compute-checksum sherpa-onnx-${SHERPA_ONNX_VERSION}-ios-shared-onnxruntime-static.xcframework.zip | tee checksum.txt

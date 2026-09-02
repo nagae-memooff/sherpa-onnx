@@ -8,7 +8,7 @@ set -e
 dir=build-ios-shared
 mkdir -p $dir
 cd $dir
-onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.27.1}
+onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.28.1}
 onnxruntime_dir=ios-onnxruntime/$onnxruntime_version
 
 CMAKE_VERBOSE_MAKEFILE=${CMAKE_VERBOSE_MAKEFILE:-OFF}
@@ -192,9 +192,9 @@ MEOF
   <key>CFBundleExecutable</key>
   <string>SherpaOnnxC</string>
   <key>CFBundleVersion</key>
-  <string>20260810</string>
+  <string>20260901</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.13.5</string>
+  <string>1.13.7</string>
   <key>MinimumOSVersion</key>
   <string>13.0</string>
   <key>CFBundleSupportedPlatforms</key>
@@ -207,6 +207,9 @@ PEOF
 
   # Fix dylib install name
   install_name_tool -id @rpath/SherpaOnnxC.framework/SherpaOnnxC $fw_dir/SherpaOnnxC
+
+  # Ad-hoc sign the framework binary so Xcode can embed and re-sign it
+  codesign --force --sign - $fw_dir/SherpaOnnxC
 }
 
 create_framework ios-arm64/libsherpa-onnx-c-api.dylib ios-arm64

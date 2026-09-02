@@ -63,9 +63,9 @@ cat > $FRAMEWORK_DIR/Versions/A/Resources/Info.plist << 'EOF'
   <key>CFBundleExecutable</key>
   <string>SherpaOnnxC</string>
   <key>CFBundleVersion</key>
-  <string>20260810</string>
+  <string>20260901</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.13.5</string>
+  <string>1.13.7</string>
 </dict>
 </plist>
 EOF
@@ -82,6 +82,9 @@ ln -sf Versions/Current/Resources $FRAMEWORK_DIR/Resources
 
 # Fix dylib install name to use framework-relative path
 install_name_tool -id @rpath/SherpaOnnxC.framework/Versions/A/SherpaOnnxC $FRAMEWORK_DIR/Versions/A/SherpaOnnxC
+
+# Ad-hoc sign the framework binary so Xcode can embed and re-sign it
+codesign --force --sign - $FRAMEWORK_DIR/Versions/A/SherpaOnnxC
 
 rm -rf sherpa-onnx.xcframework
 
