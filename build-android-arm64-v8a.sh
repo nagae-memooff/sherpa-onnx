@@ -12,6 +12,55 @@ set -ex
 # If BUILD_SHARED_LIBS is ON, then you need to copy both libsherpa-onnx-jni.so
 # and libonnxruntime.so to your Android projects
 #
+SHERPA_ONNX_ROOT=$PWD
+DOWNLOAD_CACHE_DIR=${DOWNLOAD_CACHE_DIR-${SHERPA_ONNX_ROOT}/.cache/downloads}
+case "${DOWNLOAD_CACHE_DIR}" in
+  ""|/*) ;;
+  *) DOWNLOAD_CACHE_DIR=${SHERPA_ONNX_ROOT}/${DOWNLOAD_CACHE_DIR} ;;
+esac
+export DOWNLOAD_CACHE_DIR
+
+download_cached_file() {
+  local url=$1
+  local output=$2
+  local cache_key
+  local cache_dir
+  local cache_file
+  local temp_file
+
+  if [ -z "${DOWNLOAD_CACHE_DIR}" ]; then
+    wget -q -O "${output}" "${url}"
+    return
+  fi
+
+  # 与 CMake 下载缓存使用相同的 URL 键，便于不同构建入口共享归档。
+  if command -v sha256sum >/dev/null 2>&1; then
+    cache_key=$(printf '%s' "${url}" | sha256sum)
+  elif command -v shasum >/dev/null 2>&1; then
+    cache_key=$(printf '%s' "${url}" | shasum -a 256)
+  else
+    echo "sha256sum or shasum is required for DOWNLOAD_CACHE_DIR"
+    exit 1
+  fi
+  cache_key=${cache_key%% *}
+  cache_dir=${DOWNLOAD_CACHE_DIR}/${cache_key}
+  cache_file=${cache_dir}/${url##*/}
+
+  mkdir -p "${cache_dir}" "$(dirname "${output}")"
+  if [ -s "${cache_file}" ]; then
+    echo "Using cached download: ${cache_file}"
+  else
+    temp_file=${cache_file}.part.$$
+    if ! wget -q -O "${temp_file}" "${url}"; then
+      rm -f "${temp_file}"
+      return 1
+    fi
+    mv -f "${temp_file}" "${cache_file}"
+  fi
+
+  cp -f "${cache_file}" "${output}"
+}
+
 if [ -z $BUILD_SHARED_LIBS ]; then
   BUILD_SHARED_LIBS=ON
 fi
@@ -101,7 +150,10 @@ elif [ "$BUILD_SHARED_LIBS" == ON ]; then
   if [ ! -f $onnxruntime_version/jni/arm64-v8a/libonnxruntime.so ]; then
     mkdir -p $onnxruntime_version
     pushd $onnxruntime_version
-    wget -c -q https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${onnxruntime_version}/onnxruntime-android-${onnxruntime_version}.zip
+    onnxruntime_archive=onnxruntime-android-${onnxruntime_version}.zip
+    download_cached_file \
+      "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${onnxruntime_version}/${onnxruntime_archive}" \
+      "${onnxruntime_archive}"
     unzip onnxruntime-android-${onnxruntime_version}.zip
     rm onnxruntime-android-${onnxruntime_version}.zip
     popd
@@ -111,7 +163,10 @@ elif [ "$BUILD_SHARED_LIBS" == ON ]; then
   export SHERPA_ONNXRUNTIME_INCLUDE_DIR=$dir/$onnxruntime_version/headers/
 else
   if [ ! -f ${onnxruntime_version}-static/lib/libonnxruntime.a ]; then
-    wget -c -q https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${onnxruntime_version}/onnxruntime-android-arm64-v8a-static_lib-${onnxruntime_version}.zip
+    onnxruntime_archive=onnxruntime-android-arm64-v8a-static_lib-${onnxruntime_version}.zip
+    download_cached_file \
+      "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${onnxruntime_version}/${onnxruntime_archive}" \
+      "${onnxruntime_archive}"
     unzip onnxruntime-android-arm64-v8a-static_lib-${onnxruntime_version}.zip
     rm onnxruntime-android-arm64-v8a-static_lib-${onnxruntime_version}.zip
     mv onnxruntime-android-arm64-v8a-static_lib-${onnxruntime_version} ${onnxruntime_version}-static
@@ -136,7 +191,9 @@ if [ $SHERPA_ONNX_ENABLE_RKNN == ON ]; then
   rknn_version=2.2.0
   if [ ! -d ./librknnrt-android ]; then
     rm -fv librknnrt-android.tar.bz2
-    wget https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/librknnrt-android.tar.bz2
+    download_cached_file \
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/librknnrt-android.tar.bz2" \
+      "librknnrt-android.tar.bz2"
     tar xvf librknnrt-android.tar.bz2
     rm librknnrt-android.tar.bz2
   fi
