@@ -25,7 +25,7 @@ function(download_json)
     endif()
   endforeach()
 
-  FetchContent_Declare(json
+  sherpa_onnx_fetchcontent_declare(json
     URL               ${json_URL} ${json_URL2}
     URL_HASH          ${json_HASH}
   )

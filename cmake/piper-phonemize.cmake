@@ -23,7 +23,7 @@ function(download_piper_phonemize)
     endif()
   endforeach()
 
-  FetchContent_Declare(piper_phonemize
+  sherpa_onnx_fetchcontent_declare(piper_phonemize
     URL
       ${piper_phonemize_URL}
     URL_HASH          ${piper_phonemize_HASH}

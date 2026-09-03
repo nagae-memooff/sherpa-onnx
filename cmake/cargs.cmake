@@ -25,7 +25,7 @@ function(download_cargs)
     endif()
   endforeach()
 
-  FetchContent_Declare(cargs
+  sherpa_onnx_fetchcontent_declare(cargs
     URL
       ${cargs_URL}
       ${cargs_URL2}

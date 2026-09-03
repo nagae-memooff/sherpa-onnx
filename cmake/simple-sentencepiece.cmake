@@ -28,7 +28,7 @@ function(download_simple_sentencepiece)
   set(SBPE_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
   set(SBPE_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(simple-sentencepiece
+  sherpa_onnx_fetchcontent_declare(simple-sentencepiece
     URL
       ${simple-sentencepiece_URL}
       ${simple-sentencepiece_URL2}

@@ -36,7 +36,7 @@ function(download_espeak_ng_for_piper)
     endif()
   endforeach()
 
-  FetchContent_Declare(espeak_ng
+  sherpa_onnx_fetchcontent_declare(espeak_ng
     URL
       ${espeak_ng_URL}
     URL_HASH          ${espeak_ng_HASH}

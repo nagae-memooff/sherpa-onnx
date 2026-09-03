@@ -29,7 +29,7 @@ function(download_kaldi_native_fbank)
     endif()
   endforeach()
 
-  FetchContent_Declare(kaldi_native_fbank
+  sherpa_onnx_fetchcontent_declare(kaldi_native_fbank
     URL
       ${kaldi_native_fbank_URL}
       ${kaldi_native_fbank_URL2}

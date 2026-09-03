@@ -45,7 +45,7 @@ else()
       endif()
     endforeach()
 
-    FetchContent_Declare(onnxruntime
+    sherpa_onnx_fetchcontent_declare(onnxruntime
       URL
         ${onnxruntime_URL}
       URL_HASH          ${onnxruntime_HASH}
@@ -118,7 +118,7 @@ foreach(f IN LISTS possible_directml_file_locations)
   endif()
 endforeach()
 
-FetchContent_Declare(directml
+sherpa_onnx_fetchcontent_declare(directml
   URL
     ${directml_URL}
   URL_HASH ${directml_HASH}

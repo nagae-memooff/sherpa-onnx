@@ -26,7 +26,7 @@ function(download_eigen)
   set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
   set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(eigen
+  sherpa_onnx_fetchcontent_declare(eigen
     URL               ${eigen_URL}
     URL_HASH          ${eigen_HASH}
   )

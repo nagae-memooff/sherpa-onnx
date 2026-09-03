@@ -34,7 +34,7 @@ foreach(f IN LISTS possible_file_locations)
   endif()
 endforeach()
 
-FetchContent_Declare(onnxruntime
+sherpa_onnx_fetchcontent_declare(onnxruntime
   URL
     ${onnxruntime_URL}
   URL_HASH          ${onnxruntime_HASH}

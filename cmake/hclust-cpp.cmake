@@ -26,7 +26,7 @@ function(download_hclust_cpp)
     endif()
   endforeach()
 
-  FetchContent_Declare(hclust_cpp
+  sherpa_onnx_fetchcontent_declare(hclust_cpp
     URL
       ${hclust_cpp_URL}
       ${hclust_cpp_URL2}

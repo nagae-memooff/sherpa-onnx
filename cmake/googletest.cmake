@@ -30,7 +30,7 @@ function(download_googltest)
   set(gtest_disable_pthreads ON CACHE BOOL "" FORCE)
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(googletest
+  sherpa_onnx_fetchcontent_declare(googletest
     URL
       ${googletest_URL}
       ${googletest_URL2}

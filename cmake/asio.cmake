@@ -25,7 +25,7 @@ function(download_asio)
     endif()
   endforeach()
 
-  FetchContent_Declare(asio
+  sherpa_onnx_fetchcontent_declare(asio
     URL
       ${asio_URL}
       ${asio_URL2}

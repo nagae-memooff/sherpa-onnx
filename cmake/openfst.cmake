@@ -39,7 +39,7 @@ function(download_openfst)
   set(HAVE_PYTHON OFF CACHE BOOL "" FORCE)
   set(HAVE_SPECIAL OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(openfst
+  sherpa_onnx_fetchcontent_declare(openfst
     URL               ${openfst_URL}
     URL_HASH          ${openfst_HASH}
   )

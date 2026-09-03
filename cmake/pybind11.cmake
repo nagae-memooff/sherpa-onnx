@@ -25,7 +25,7 @@ function(download_pybind11)
     endif()
   endforeach()
 
-  FetchContent_Declare(pybind11
+  sherpa_onnx_fetchcontent_declare(pybind11
     URL
       ${pybind11_URL}
       ${pybind11_URL2}

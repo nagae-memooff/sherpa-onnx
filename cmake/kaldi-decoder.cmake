@@ -27,7 +27,7 @@ function(download_kaldi_decoder)
     endif()
   endforeach()
 
-  FetchContent_Declare(kaldi_decoder
+  sherpa_onnx_fetchcontent_declare(kaldi_decoder
     URL
       ${kaldi_decoder_URL}
     URL_HASH          ${kaldi_decoder_HASH}

@@ -32,7 +32,7 @@ function(download_portaudio)
   set(PA_BUILD_EXAMPLES ON CACHE BOOL "" FORCE)
   set(PA_USE_WDMKS OFF CACHE BOOL "" FORCE)
 
-  FetchContent_Declare(portaudio
+  sherpa_onnx_fetchcontent_declare(portaudio
     URL
       ${portaudio_URL}
       ${portaudio_URL2}

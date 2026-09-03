@@ -26,7 +26,7 @@ function(download_websocketpp)
     endif()
   endforeach()
 
-  FetchContent_Declare(websocketpp
+  sherpa_onnx_fetchcontent_declare(websocketpp
     URL
       ${websocketpp_URL}
       ${websocketpp_URL2}
