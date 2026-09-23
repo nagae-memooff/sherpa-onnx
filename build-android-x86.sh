@@ -84,7 +84,7 @@ fi
 echo "ANDROID_NDK: $ANDROID_NDK"
 sleep 1
 
-onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.27.1}
+onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.28.2}
 
 if [ -n "${SHERPA_ONNXRUNTIME_LIB_DIR:-}" ] && [ -n "${SHERPA_ONNXRUNTIME_INCLUDE_DIR:-}" ]; then
   echo "Using externally provided ONNX Runtime"
@@ -161,3 +161,20 @@ if [ $BUILD_SHARED_LIBS == ON ]; then
 fi
 
 rm -rf install/lib/pkgconfig
+rm -rf install/lib/lib*.a
+if [ -f install/lib/libsherpa-onnx-c-api.so ]; then
+  cat >install/lib/README.md <<EOF
+# Introduction
+
+Note that if you use Android Studio, then you only need to
+copy libonnxruntime.so and libsherpa-onnx-jni.so
+to your jniLibs, and you don't need libsherpa-onnx-c-api.so or
+libsherpa-onnx-cxx-api.so.
+
+libsherpa-onnx-c-api.so and libsherpa-onnx-cxx-api.so are for users
+who don't use JNI. In that case, libsherpa-onnx-jni.so is not needed.
+
+In any case, libonnxruntime.so is always needed.
+EOF
+  ls -lh install/lib/README.md
+fi

@@ -673,6 +673,7 @@ type
   TSherpaOnnxFastClusteringConfig = record
     NumClusters: Integer;
     Threshold: Single;
+    ComputeConfidence: Integer;
     function ToString: AnsiString;
     class operator Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxFastClusteringConfig);
   end;
@@ -702,6 +703,7 @@ type
     Start: Single;
     Stop: Single;
     Speaker: Integer;
+    Confidence: Single;
     function ToString: AnsiString;
   end;
 
@@ -1277,6 +1279,7 @@ type
   SherpaOnnxFastClusteringConfig = record
     NumClusters: cint32;
     Threshold: cfloat;
+    ComputeConfidence: cint32;
   end;
 
   SherpaOnnxSpeakerEmbeddingExtractorConfig = record
@@ -1300,6 +1303,7 @@ type
     Start: cfloat;
     Stop: cfloat;
     Speaker: cint32;
+    Confidence: cfloat;
   end;
 
   PSherpaOnnxOfflineSpeakerDiarizationSegment = ^SherpaOnnxOfflineSpeakerDiarizationSegment;
@@ -3259,14 +3263,15 @@ end;
 function TSherpaOnnxFastClusteringConfig.ToString: AnsiString;
 begin
   Result := Format('TSherpaOnnxFastClusteringConfig(' +
-    'NumClusters := %d, Threshold := %.3f)',
-    [Self.NumClusters, Self.Threshold]);
+    'NumClusters := %d, Threshold := %.3f, ComputeConfidence := %d)',
+    [Self.NumClusters, Self.Threshold, Self.ComputeConfidence]);
 end;
 
 class operator TSherpaOnnxFastClusteringConfig.Initialize({$IFDEF FPC}var{$ELSE}out{$ENDIF} Dest: TSherpaOnnxFastClusteringConfig);
 begin
   Dest.NumClusters := -1;
   Dest.Threshold := 0.5;
+  Dest.ComputeConfidence := 0;
 end;
 
 function TSherpaOnnxSpeakerEmbeddingExtractorConfig.ToString: AnsiString;
@@ -3314,8 +3319,9 @@ begin
   Result := Format('TSherpaOnnxOfflineSpeakerDiarizationSegment(' +
     'Start := %.3f, '+
     'Stop := %.3f, '+
-    'Speaker := %d)',
-    [Self.Start, Self.Stop, Self.Speaker]);
+    'Speaker := %d, '+
+    'Confidence := %.3f)',
+    [Self.Start, Self.Stop, Self.Speaker, Self.Confidence]);
 end;
 
 constructor TSherpaOnnxOfflineSpeakerDiarization.Create(Config: TSherpaOnnxOfflineSpeakerDiarizationConfig);
@@ -3337,6 +3343,7 @@ begin
 
   C.Clustering.NumClusters := Config.Clustering.NumClusters;
   C.Clustering.Threshold := Config.Clustering.Threshold;
+  C.Clustering.ComputeConfidence := Config.Clustering.ComputeConfidence;
 
   C.MinDurationOn := Config.MinDurationOn;
   C.MinDurationOff := Config.MinDurationOff;
@@ -3367,6 +3374,7 @@ begin
 
   C.Clustering.NumClusters := Config.Clustering.NumClusters;
   C.Clustering.Threshold := Config.Clustering.Threshold;
+  C.Clustering.ComputeConfidence := Config.Clustering.ComputeConfidence;
 
   SherpaOnnxOfflineSpeakerDiarizationSetConfig(Self.Handle, @C);
 end;
@@ -3395,6 +3403,7 @@ begin
       Result[I].Start := Segments[I].Start;
       Result[I].Stop := Segments[I].Stop;
       Result[I].Speaker := Segments[I].Speaker;
+      Result[I].Confidence := Segments[I].Confidence;
     end;
 
   SherpaOnnxOfflineSpeakerDiarizationDestroySegment(Segments);
@@ -3426,6 +3435,7 @@ begin
       Result[I].Start := Segments[I].Start;
       Result[I].Stop := Segments[I].Stop;
       Result[I].Speaker := Segments[I].Speaker;
+      Result[I].Confidence := Segments[I].Confidence;
     end;
 
   SherpaOnnxOfflineSpeakerDiarizationDestroySegment(Segments);

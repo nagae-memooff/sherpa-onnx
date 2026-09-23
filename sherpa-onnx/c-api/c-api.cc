@@ -3249,6 +3249,9 @@ GetOfflineSpeakerDiarizationConfig(
   sd_config.clustering.threshold =
       SHERPA_ONNX_OR(config->clustering.threshold, 0.5);
 
+  sd_config.clustering.compute_confidence =
+      config->clustering.compute_confidence != 0;
+
   sd_config.min_duration_on = SHERPA_ONNX_OR(config->min_duration_on, 0.3);
 
   sd_config.min_duration_off = SHERPA_ONNX_OR(config->min_duration_off, 0.5);
@@ -3319,6 +3322,9 @@ void SherpaOnnxOfflineSpeakerDiarizationSetConfig(
   sd_config.clustering.threshold =
       SHERPA_ONNX_OR(config->clustering.threshold, 0.5);
 
+  sd_config.clustering.compute_confidence =
+      config->clustering.compute_confidence != 0;
+
   sd->impl->SetConfig(sd_config);
 }
 
@@ -3361,6 +3367,7 @@ SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime(
     ans[i].start = s.Start();
     ans[i].end = s.End();
     ans[i].speaker = s.Speaker();
+    ans[i].confidence = s.Confidence();
   }
 
   return ans;

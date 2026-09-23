@@ -39,7 +39,7 @@ if [ -z "$VERSION" ]; then
   echo "Error: Cannot determine sherpa-onnx version."
   echo "Searched upward from: $SCRIPT_DIR"
   echo "Please set VERSION environment variable manually, e.g.:"
-  echo "  VERSION=1.13.7 ./setup-ios.sh"
+  echo "  VERSION=1.13.8 ./setup-ios.sh"
   exit 1
 fi
 
@@ -60,5 +60,11 @@ trap 'rm -f "$TMPFILE"' EXIT
 
 curl --fail -L -o "$TMPFILE" "$URL"
 unzip -q "$TMPFILE" -d "$DEST"
+
+# The zip may extract as SherpaOnnxC.xcframework or sherpa-onnx.xcframework.
+# Rename to the expected name if needed.
+if [ -d "$DEST/SherpaOnnxC.xcframework" ] && [ ! -d "$XCFRAMEWORK" ]; then
+  mv "$DEST/SherpaOnnxC.xcframework" "$XCFRAMEWORK"
+fi
 
 echo "Installed sherpa-onnx.xcframework to $XCFRAMEWORK"

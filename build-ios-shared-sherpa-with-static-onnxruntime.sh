@@ -26,7 +26,7 @@ dir=build-ios-shared-sherpa-with-static-onnxruntime
 mkdir -p $dir
 cd $dir
 
-onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.28.1}
+onnxruntime_version=${SHERPA_ONNX_ONNXRUNTIME_VERSION:-1.28.2}
 onnxruntime_dir=ios-onnxruntime/$onnxruntime_version
 
 CMAKE_VERBOSE_MAKEFILE=${CMAKE_VERBOSE_MAKEFILE:-OFF}
@@ -213,9 +213,9 @@ MEOF
   <key>CFBundleExecutable</key>
   <string>SherpaOnnxC</string>
   <key>CFBundleVersion</key>
-  <string>20260901</string>
+  <string>20260910</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.13.7</string>
+  <string>1.13.8</string>
   <key>MinimumOSVersion</key>
   <string>13.0</string>
   <key>CFBundleSupportedPlatforms</key>
