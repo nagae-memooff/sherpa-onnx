@@ -778,7 +778,8 @@ bool IsSpecialToken(const std::string &token) {
 }
 
 bool IsSkippableSpecialToken(const std::string &token) {
-  return token == "<|im_start|>" || token == "<|im_end|>";
+  return token == "<|im_start|>" || token == "<|im_end|>" ||
+         token == "<|endoftext|>" || token == "<|padding|>";
 }
 
 bool ParseInt32String(const std::string &s, int32_t *value) {

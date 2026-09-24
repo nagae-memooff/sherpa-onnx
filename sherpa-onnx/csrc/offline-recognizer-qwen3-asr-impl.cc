@@ -1166,6 +1166,14 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   generated_ids.reserve(static_cast<size_t>(max_new_tokens));
 
   const int64_t eos_id = tokenizer_->GetEosTokenId();
+  const int64_t pad_id = tokenizer_->GetPadTokenId();
+  const int64_t endoftext_id = tokenizer_->GetTokenId("<|endoftext|>");
+  const auto is_unexpected_stop_token =
+      [eos_id, pad_id, endoftext_id](int64_t token_id) {
+        return token_id >= 0 && token_id != eos_id &&
+               ((pad_id >= 0 && token_id == pad_id) ||
+                (endoftext_id >= 0 && token_id == endoftext_id));
+      };
 
   auto log_shape = logits.GetTensorTypeAndShapeInfo().GetShape();
   if (log_shape.size() < 3) {
@@ -1222,6 +1230,13 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       result.text = "";
       return result;
     }
+  }
+  if (is_unexpected_stop_token(next_id)) {
+    SHERPA_ONNX_LOGE(
+        "qwen3-asr: first generated token is padding/endoftext; "
+        "returning an empty result");
+    result.text = "";
+    return result;
   }
   if (profile) {
     profile->prefill_sample_ms += ProfileElapsedMs(prefill_sample_start);
@@ -1311,6 +1326,13 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     }
 
     if (next_id == eos_id) {
+      break;
+    }
+    if (is_unexpected_stop_token(next_id)) {
+      SHERPA_ONNX_LOGE(
+          "qwen3-asr: generated padding/endoftext after %d tokens; "
+          "stopping before unrelated continuation",
+          static_cast<int32_t>(generated_ids.size()));
       break;
     }
 
