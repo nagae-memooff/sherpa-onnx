@@ -180,6 +180,21 @@ Qwen3AllocatorStats ReadAllocatorStats(const Ort::Allocator *allocator) {
   return ans;
 }
 
+Qwen3AllocatorStats ReadCpuAllocatorStats(const Ort::Session &session) {
+#if ORT_API_VERSION >= 23
+  try {
+    const auto info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    const Ort::Allocator allocator(session, info);
+    return ReadAllocatorStats(&allocator);
+  } catch (const Ort::Exception &) {
+    return Qwen3AllocatorStats{};
+  }
+#else
+  (void)session;
+  return Qwen3AllocatorStats{};
+#endif
+}
+
 class CudaRuntime {
  public:
   enum MemcpyKind {
@@ -986,6 +1001,9 @@ class OfflineQwen3ASRModel::Impl {
     ans.conv = ReadAllocatorStats(conv_cuda_allocator_.get());
     ans.encoder = ReadAllocatorStats(encoder_cuda_allocator_.get());
     ans.decoder = ReadAllocatorStats(cuda_allocator_.get());
+    ans.cpu_conv = ReadCpuAllocatorStats(*conv_sess_);
+    ans.cpu_encoder = ReadCpuAllocatorStats(*encoder_sess_);
+    ans.cpu_decoder = ReadCpuAllocatorStats(*decoder_sess_);
     return ans;
   }
 

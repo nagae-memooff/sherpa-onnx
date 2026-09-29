@@ -32,6 +32,10 @@ struct Qwen3AllocatorStatsSnapshot {
   Qwen3AllocatorStats conv;
   Qwen3AllocatorStats encoder;
   Qwen3AllocatorStats decoder;
+  // CPU session arena 与 CUDA allocator 分开记录，禁止把不可用视为零占用。
+  Qwen3AllocatorStats cpu_conv;
+  Qwen3AllocatorStats cpu_encoder;
+  Qwen3AllocatorStats cpu_decoder;
 };
 
 class OfflineQwen3ASRModel {

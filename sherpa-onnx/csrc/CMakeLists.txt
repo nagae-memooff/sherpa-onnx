@@ -861,6 +861,7 @@ if(SHERPA_ONNX_ENABLE_TESTS)
     offline-recognizer-moonshine-v2-impl-test.cc
     offline-recognizer-qwen3-asr-impl-test.cc
     offline-recognizer-shared-rng-test.cc
+    offline-stream-json-test.cc
     offline-whisper-timestamp-rules-test.cc
     packed-sequence-test.cc
     pad-sequence-test.cc
@@ -914,6 +915,7 @@ if(SHERPA_ONNX_ENABLE_TESTS)
   foreach(source IN LISTS sherpa_onnx_test_srcs)
     sherpa_onnx_add_test(${source})
   endforeach()
+  target_link_libraries(offline-stream-json-test PRIVATE nlohmann_json::nlohmann_json)
 endif()
 
 set(srcs_to_check)

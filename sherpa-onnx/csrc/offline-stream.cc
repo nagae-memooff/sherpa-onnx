@@ -23,6 +23,31 @@
 #include "sherpa-onnx/csrc/text-utils.h"
 
 namespace sherpa_onnx {
+namespace {
+
+// std::quoted 不转义 JSON 控制字符；保留 UTF-8 字节与原有文本内容。
+std::string QuoteJsonString(const std::string &text) {
+  static constexpr char hex[] = "0123456789abcdef";
+  std::string out;
+  out.reserve(text.size() + 2);
+  out.push_back('"');
+  for (unsigned char c : text) {
+    if (c == '"' || c == '\\') {
+      out.push_back('\\');
+      out.push_back(static_cast<char>(c));
+    } else if (c < 0x20) {
+      out += "\\u00";
+      out.push_back(hex[c >> 4]);
+      out.push_back(hex[c & 0x0f]);
+    } else {
+      out.push_back(static_cast<char>(c));
+    }
+  }
+  out.push_back('"');
+  return out;
+}
+
+}  // namespace
 
 class OfflineStream::Impl {
  public:
@@ -436,19 +461,19 @@ std::string OfflineRecognitionResult::AsJsonString() const {
 
   os << "\"lang\""
      << ": ";
-  os << std::quoted(lang) << ", ";
+  os << QuoteJsonString(lang) << ", ";
 
   os << "\"emotion\""
      << ": ";
-  os << std::quoted(emotion) << ", ";
+  os << QuoteJsonString(emotion) << ", ";
 
   os << "\"event\""
      << ": ";
-  os << std::quoted(event) << ", ";
+  os << QuoteJsonString(event) << ", ";
 
   os << "\"text\""
      << ": ";
-  os << std::quoted(text) << ", ";
+  os << QuoteJsonString(text) << ", ";
 
   os << "\""
      << "timestamps"
@@ -492,7 +517,7 @@ std::string OfflineRecognitionResult::AsJsonString() const {
          << "\"";
       os.flags(oldFlags);
     } else {
-      os << sep << std::quoted(t);
+      os << sep << QuoteJsonString(t);
     }
     sep = ", ";
   }
@@ -546,7 +571,7 @@ std::string OfflineRecognitionResult::AsJsonString() const {
     os << "\"segment_texts\": [";
     sep = "";
     for (const auto &t : segment_texts) {
-      os << sep << std::quoted(t);
+      os << sep << QuoteJsonString(t);
       sep = ", ";
     }
     os << "]";

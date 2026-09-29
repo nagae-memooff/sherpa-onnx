@@ -93,7 +93,13 @@ struct Qwen3DecodeProfile {
     AppendAllocatorStats(os, snapshot.encoder);
     *os << ",\"decoder\":";
     AppendAllocatorStats(os, snapshot.decoder);
-    *os << "}";
+    *os << ",\"cpu\":{\"conv\":";
+    AppendAllocatorStats(os, snapshot.cpu_conv);
+    *os << ",\"encoder\":";
+    AppendAllocatorStats(os, snapshot.cpu_encoder);
+    *os << ",\"decoder\":";
+    AppendAllocatorStats(os, snapshot.cpu_decoder);
+    *os << "}}";
   }
 
   std::string AsJson() const {
@@ -1417,7 +1423,10 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
   std::unique_ptr<Qwen3DecodeProfile> profile_owner;
   const bool allocator_stats_requested =
-      stream->GetOptionInt("allocator_stats", 0) != 0;
+      stream->GetOptionInt("allocator_stats", 0) != 0 ||
+      (stream->GetOptionInt("profile", 0) != 0 &&
+       (config_.model_config.provider.empty() ||
+        config_.model_config.provider == "cpu"));
   if (stream->GetOptionInt("profile", 0) != 0 ||
       allocator_stats_requested) {
     profile_owner = std::make_unique<Qwen3DecodeProfile>();
