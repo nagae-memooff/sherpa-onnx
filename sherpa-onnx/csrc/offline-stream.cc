@@ -106,17 +106,7 @@ class OfflineStream::Impl {
     whisper_fbank_ = std::make_unique<knf::OnlineWhisperFbank>(whisper_opts);
     config_.sampling_rate = opts_.frame_opts.samp_freq;
 
-    if (tag.align_to_stft_center) {
-      whisper_align_to_stft_center_ = true;
-      // The whisper feature computer uses a 10 ms frame shift; prepending
-      // half a shift of silence moves each kaldi-placed window midpoint
-      // from i * shift + shift / 2 back to i * shift, the centered-STFT
-      // convention. GetFrames() drops the one extra trailing frame this
-      // produces, so the frame count matches floor(num_samples / shift)
-      // exactly as the reference extractor computes it.
-      whisper_center_padding_ =
-          static_cast<int32_t>(opts_.frame_opts.samp_freq * 0.01f) / 2;
-    }
+    whisper_align_to_stft_center_ = tag.align_to_stft_center;
   }
 
   explicit Impl(CEDTag /*tag*/) : is_ced_(true) {
@@ -211,26 +201,13 @@ class OfflineStream::Impl {
   }
 
   void FeedWhisper(const float *samples, int32_t n) {
-    if (whisper_center_padding_ > 0 && n > 0) {
-      // Reflect-pad the lead-in the way torch.stft(center=True,
-      // pad_mode="reflect") does: sample -i mirrors sample i (the
-      // boundary sample itself is not repeated). A first chunk shorter
-      // than the padding is zero-padded instead.
-      int32_t pad = whisper_center_padding_;
-      std::vector<float> padded(static_cast<size_t>(pad) + n);
-      if (n > pad) {
-        for (int32_t i = 0; i != pad; ++i) {
-          padded[i] = samples[pad - i];
-        }
-      }
-      std::copy(samples, samples + n, padded.begin() + pad);
-      whisper_fbank_->AcceptWaveform(config_.sampling_rate, padded.data(),
-                                     padded.size());
-      whisper_center_padding_ = 0;  // pad only before the first chunk
-    } else {
-      whisper_fbank_->AcceptWaveform(config_.sampling_rate, samples, n);
+    if (whisper_align_to_stft_center_) {
+      // Qwen 使用完整片段的真实边界；分次输入不能提前固定反射窗口。
+      if (n > 0) centered_whisper_samples_.insert(
+          centered_whisper_samples_.end(), samples, samples + n);
+      return;
     }
-    whisper_num_samples_ += n;
+    whisper_fbank_->AcceptWaveform(config_.sampling_rate, samples, n);
     whisper_fbank_->InputFinished();
   }
 
@@ -247,23 +224,14 @@ class OfflineStream::Impl {
       return samples_;
     }
 
+    if (whisper_align_to_stft_center_) {
+      return GetCenteredWhisperFrames();
+    }
+
     int32_t n = fbank_  ? fbank_->NumFramesReady()
                 : mfcc_ ? mfcc_->NumFramesReady()
                         : whisper_fbank_->NumFramesReady();
     assert(n > 0 && "Please first call AcceptWaveform()");
-
-    if (whisper_align_to_stft_center_) {
-      // The half-shift lead-in padding yields extra trailing frames
-      // relative to the centered-STFT frame count of
-      // floor(num_samples / frame_shift); keep exactly that many.
-      int32_t frame_shift =
-          static_cast<int32_t>(opts_.frame_opts.samp_freq * 0.01f);
-      int32_t target = static_cast<int32_t>(whisper_num_samples_ / frame_shift);
-      n = std::min(n, target);
-      if (n <= 0) {
-        return {};
-      }
-    }
 
     int32_t feature_dim = FeatureDim();
 
@@ -328,6 +296,36 @@ class OfflineStream::Impl {
   }
 
  private:
+  std::vector<float> GetCenteredWhisperFrames() const {
+    constexpr int32_t kShift = 160;
+    constexpr int32_t kWindow = 400;
+    const int64_t size = centered_whisper_samples_.size();
+    const int64_t frames = size / kShift;
+    if (frames == 0) return {};
+
+    knf::WhisperFeatureOptions options;
+    options.dim = FeatureDim();
+    knf::WhisperFeatureComputer computer(options);
+    knf::FeatureWindowFunction window(computer.GetFrameOptions());
+    std::vector<float> features(frames * options.dim);
+    std::vector<float> frame(kWindow);
+    for (int64_t f = 0; f < frames; ++f) {
+      const int64_t start = f * kShift - kWindow / 2;
+      for (int32_t i = 0; i < kWindow; ++i) {
+        int64_t sample = start + i;
+        // torch.stft(center=True, pad_mode="reflect") 不重复边界采样点。
+        // 对不足一个窗口的片段使用重复反射，不读取片段外音频。
+        while (sample < 0 || sample >= size) {
+          sample = sample < 0 ? -sample : 2 * size - 2 - sample;
+        }
+        frame[i] = centered_whisper_samples_[sample];
+      }
+      window.Apply(frame.data());
+      computer.Compute(0, 1, &frame, features.data() + f * options.dim);
+    }
+    return features;
+  }
+
   // see
   // https://github.com/pytorch/audio/blob/main/src/torchaudio/functional/functional.py#L359
   void AmplitudeToDB(float *p, int32_t n) const {
@@ -383,8 +381,7 @@ class OfflineStream::Impl {
   bool is_moonshine_ = false;
   bool is_omnilingual_asr_ = false;
   bool whisper_align_to_stft_center_ = false;
-  int32_t whisper_center_padding_ = 0;
-  int64_t whisper_num_samples_ = 0;
+  std::vector<float> centered_whisper_samples_;
 
   // used only when (is_moonshine_ || is_omnilingual_asr_) == true
   std::vector<float> samples_;
