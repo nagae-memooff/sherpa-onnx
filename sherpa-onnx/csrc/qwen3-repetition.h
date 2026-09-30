@@ -35,5 +35,19 @@ inline Qwen3PeriodicRepetition FindQwen3PeriodicRepetition(
   }
   return {};
 }
+inline Qwen3PeriodicRepetition CollapseQwen3RepeatedTail(
+    std::vector<int64_t> *ids) {
+  const int32_t size = static_cast<int32_t>(ids->size());
+  for (int32_t period = 1; period <= 128 && period * 3 <= size; ++period) {
+    int32_t span = period;
+    while (span < size && (*ids)[size - 1 - span] ==
+                             (*ids)[size - 1 - span % period]) ++span;
+    if (span >= std::max(8, period * 3)) {
+      ids->resize(size - span + period);
+      return {period, span};
+    }
+  }
+  return {};
+}
 }  // namespace sherpa_onnx
 #endif

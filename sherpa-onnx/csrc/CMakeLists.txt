@@ -1,4 +1,5 @@
 include_directories(${PROJECT_SOURCE_DIR})
+include(${PROJECT_SOURCE_DIR}/cmake/qwen-zlib.cmake)
 
 if(SHERPA_ONNX_ENABLE_PYTHON)
   message(STATUS "PYTHON_EXECUTABLE: ${PYTHON_EXECUTABLE}")
@@ -289,6 +290,7 @@ list(APPEND sources
   offline-qwen3-asr-model.cc
   offline-recognizer-qwen3-asr-impl.cc
   qwen-asr-tokenizer.cc
+  qwen3-compression.cc
 )
 
 if(SHERPA_ONNX_ENABLE_TTS)
@@ -394,6 +396,8 @@ endif()
 if(ANDROID)
   target_link_libraries(sherpa-onnx-core android log)
 endif()
+
+target_link_libraries(sherpa-onnx-core sherpa-qwen-zlib)
 
 target_link_libraries(sherpa-onnx-core
   kaldi-native-fbank-core

@@ -4,6 +4,7 @@
 
 #include "sherpa-onnx/csrc/offline-recognizer-qwen3-asr-impl.h"
 #include "sherpa-onnx/csrc/qwen3-repetition.h"
+#include "sherpa-onnx/csrc/qwen3-compression.h"
 
 #include <algorithm>
 #include <array>
@@ -508,45 +509,6 @@ bool IsDegenerateRepetition(const std::vector<int64_t> &ids) {
   return true;
 }
 
-// Removes the degenerate tail from ids: trailing tokens drawn from the token
-// set of the final kQwen3LoopWindow entries, scanning no further back than
-// that window so text decoded before the collapse is never removed even when
-// it ends with a token the loop happens to reuse. What remains is the text
-// decoded before the loop started (possibly nothing).
-void TrimDegenerateTail(std::vector<int64_t> *ids) {
-  std::array<int64_t, kQwen3LoopMaxDistinct> distinct{};
-  int32_t num_distinct = 0;
-  for (size_t i = ids->size() - kQwen3LoopWindow; i != ids->size(); ++i) {
-    bool seen = false;
-    for (int32_t k = 0; k != num_distinct; ++k) {
-      if (distinct[k] == (*ids)[i]) {
-        seen = true;
-        break;
-      }
-    }
-    if (!seen && num_distinct < kQwen3LoopMaxDistinct) {
-      distinct[num_distinct++] = (*ids)[i];
-    }
-  }
-
-  const size_t window_start = ids->size() - kQwen3LoopWindow;
-  size_t keep = ids->size();
-  while (keep > window_start) {
-    bool in_loop_set = false;
-    for (int32_t k = 0; k != num_distinct; ++k) {
-      if (distinct[k] == (*ids)[keep - 1]) {
-        in_loop_set = true;
-        break;
-      }
-    }
-    if (!in_loop_set) {
-      break;
-    }
-    --keep;
-  }
-  ids->resize(keep);
-}
-
 inline void RemoveUtf8ReplacementChars(std::string *s) {
   if (!s || s->empty()) {
     return;
@@ -945,6 +907,17 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     result.qwen_decode_json = status.AsJson();
     return result;
   };
+  Qwen3CompressionConfig compression;
+  compression.mode = stream->GetOptionInt("compression_mode", 2);
+  compression.threshold = stream->GetOptionFloat("compression_threshold", 2.4f);
+  compression.min_tokens = stream->GetOptionInt("compression_min_tokens", 64);
+  compression.window_tokens = stream->GetOptionInt("compression_window_tokens", 128);
+  compression.interval = stream->GetOptionInt("compression_interval", 16);
+  compression.consecutive = stream->GetOptionInt("compression_consecutive", 2);
+  if (!compression.Valid()) return finish("invalid_compression_config");
+  status.compression_mode = compression.mode;
+  status.compression_threshold = compression.threshold;
+  int32_t compression_streak = 0;
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
   const auto &qwen3_config = config_.model_config.qwen3_asr;
@@ -1394,6 +1367,27 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     if (status.diagnostics) status.generated_ids.push_back(next_id);
     ++cur_len;
 
+    if (compression.mode != 0 && status.generated_tokens >= compression.min_tokens &&
+        (status.generated_tokens - compression.min_tokens) % compression.interval == 0) {
+      const auto started = ProfileClock::now();
+      const size_t count = std::min(generated_ids.size(),
+                                   static_cast<size_t>(compression.window_tokens));
+      const std::vector<int64_t> window(generated_ids.end() - count, generated_ids.end());
+      status.compression_ratio = Qwen3TextCompressionRatio(tokenizer_->Decode(window));
+      status.compression_max_ratio = std::max(status.compression_max_ratio,
+                                             status.compression_ratio);
+      ++status.compression_checks;
+      const bool high = status.compression_ratio > compression.threshold;
+      compression_streak = high ? compression_streak + 1 : 0;
+      if (high) ++status.compression_hits;
+      status.compression_check_ms += ProfileElapsedMs(started);
+      if (compression.mode == 2 && compression_streak >= compression.consecutive) {
+        status.reason = "compression_guard";
+        status.repetition_window = count;
+        break;
+      }
+    }
+
     if (IsDegenerateRepetition(generated_ids)) {
       // The decoder has collapsed into cycling over a couple of token ids;
       // it will not recover under greedy decoding and would only repeat
@@ -1403,11 +1397,11 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       // some sung inputs; see k2-fsa/sherpa-onnx#3535.
       SHERPA_ONNX_LOGE(
           "qwen3-asr: decode collapsed into a repetition loop after %d "
-          "tokens; truncating the repetition",
+          "tokens; folding the repeated tail",
           static_cast<int32_t>(generated_ids.size()));
       status.reason = "repetition_guard";
       status.repetition_window = kQwen3LoopWindow;
-      TrimDegenerateTail(&generated_ids);
+      // 统一在解码结束后定位并折叠重复，保留有效前文。
       break;
     }
 
@@ -1417,11 +1411,16 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       status.repetition_period = repetition.period;
       status.repetition_window = repetition.span;
       // 仅删除有证据的重复窗口；原始 token 保留在 diagnostics 中。
-      generated_ids.resize(generated_ids.size() - repetition.span);
+      // 压缩比或周期证据只负责停止；折叠范围另行验证。
       break;
     }
   }
 
+  if (status.reason == "repetition_guard" || status.reason == "compression_guard") {
+    const auto folded = CollapseQwen3RepeatedTail(&generated_ids);
+    status.repetition_processed = folded.span > 0;
+    if (folded.span > 0) status.repetition_period = folded.period;
+  }
   status.retained_tokens = static_cast<int32_t>(generated_ids.size());
 
   std::vector<int64_t> cleaned_ids = generated_ids;

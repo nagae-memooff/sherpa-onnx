@@ -1,3 +1,4 @@
+#include "sherpa-onnx/csrc/qwen3-compression.h"
 // sherpa-onnx/csrc/offline-recognizer-qwen3-asr-impl-test.cc
 //
 // Copyright (c)  2026  fra-shipper
@@ -124,5 +125,24 @@ TEST(QwenPeriodicRepetition, FiniteRepeatedPhrasesAndInterruptedCycles) {
   ids[ids.size()-20] = 999;
   EXPECT_EQ(FindQwen3PeriodicRepetition(ids).period, 0);
   EXPECT_EQ(FindQwen3PeriodicRepetition({}).period, 0);
+}
+}  // namespace sherpa_onnx
+
+namespace sherpa_onnx {
+TEST(Qwen3Compression, ZlibReferenceAndTailPreservation) {
+  EXPECT_DOUBLE_EQ(Qwen3TextCompressionRatio(""), 0);
+  EXPECT_NEAR(Qwen3TextCompressionRatio(std::string(1000, 'a')), 1000.0 / 17, 1e-9);
+  std::vector<int64_t> ids{99, 98};
+  for (int i = 0; i < 20; ++i) { ids.push_back(3); ids.push_back(4); }
+  auto folded = CollapseQwen3RepeatedTail(&ids);
+  EXPECT_EQ(folded.period, 2);
+  EXPECT_EQ(ids, (std::vector<int64_t>{99, 98, 3, 4}));
+  const auto original = ids;
+  EXPECT_EQ(CollapseQwen3RepeatedTail(&ids).span, 0);
+  EXPECT_EQ(ids, original);
+  Qwen3CompressionConfig config;
+  EXPECT_TRUE(config.Valid());
+  config.threshold = std::numeric_limits<float>::quiet_NaN();
+  EXPECT_FALSE(config.Valid());
 }
 }  // namespace sherpa_onnx
