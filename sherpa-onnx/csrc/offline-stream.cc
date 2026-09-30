@@ -577,6 +577,10 @@ std::string OfflineRecognitionResult::AsJsonString() const {
     os << "]";
   }
 
+  if (!qwen_decode_json.empty()) {
+    os << ", \"qwen_decode\": " << qwen_decode_json;
+  }
+
   if (!profile_json.empty()) {
     os << ", \"qwen_profile\": " << profile_json;
   }

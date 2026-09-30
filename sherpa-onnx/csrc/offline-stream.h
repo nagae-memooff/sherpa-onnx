@@ -59,6 +59,9 @@ struct OfflineRecognitionResult {
   // enabled through OfflineStream::SetOption("profile", "1").
   std::string profile_json;
 
+  // Qwen3 结果完整性信息始终提供，不依赖 profile 开关。
+  std::string qwen_decode_json;
+
   std::string AsJsonString() const;
 };
 

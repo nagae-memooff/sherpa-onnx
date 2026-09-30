@@ -34,6 +34,7 @@
 #include "sherpa-onnx/csrc/math.h"
 #include "sherpa-onnx/csrc/onnx-utils.h"
 #include "sherpa-onnx/csrc/text-utils.h"
+#include "sherpa-onnx/csrc/qwen3-decode-status.h"
 
 namespace sherpa_onnx {
 
@@ -933,8 +934,16 @@ int64_t OfflineRecognizerQwen3ASRImpl::SampleTokenWithTemperatureAndTopP(
 
 OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     Ort::Value audio_features, int32_t audio_token_len,
-    OfflineStream *stream, Qwen3DecodeProfile *profile) const {
+    OfflineStream *stream, Qwen3DecodeProfile *profile,
+    Qwen3DecodeStatus &status) const {
   OfflineRecognitionResult result;
+  status.diagnostics = stream->GetOptionInt("diagnostics", 0) != 0;
+  status.original_audio_tokens = audio_token_len;
+  auto finish = [&result, &status](const char *reason) {
+    status.reason = reason;
+    result.qwen_decode_json = status.AsJson();
+    return result;
+  };
   auto memory_info =
       Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeDefault);
   const auto &qwen3_config = config_.model_config.qwen3_asr;
@@ -944,6 +953,8 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   if (max_new_tokens <= 0) {
     max_new_tokens = qwen3_config.max_new_tokens;
   }
+
+  status.max_new_tokens = max_new_tokens;
 
   const float temperature =
       stream->GetOptionFloat("temperature", qwen3_config.temperature);
@@ -985,7 +996,7 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
 
   if (audio_token_len <= 0) {
     result.text = "";
-    return result;
+    return finish("no_audio_features");
   }
 
   const auto prompt_start =
@@ -1010,7 +1021,7 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   int32_t context_len = static_cast<int32_t>(source_ids.size());
   if (context_len == 0) {
     result.text = "";
-    return result;
+    return finish("invalid_prompt");
   }
 
   const int32_t model_max_len = model_->GetMaxTotalLen();
@@ -1020,6 +1031,9 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   if (max_total_len_opt > 0) {
     max_seq_len = std::min(model_max_len, max_total_len_opt);
   }
+
+  status.original_context_tokens = context_len;
+  status.max_total_len = max_seq_len;
 
   if (!hotwords.empty()) {
     const std::string scaffold_no_hw =
@@ -1049,7 +1063,7 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     const int32_t one_audio_len = static_cast<int32_t>(audio_pad_ids_.size());
     if (one_audio_len <= 0) {
       result.text = "";
-      return result;
+      return finish("invalid_prompt");
     }
 
     int32_t after_len =
@@ -1066,7 +1080,7 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
           before_len, after_len, max_seq_len);
       Qwen3LogMaxTotalLenSuggestions(max_seq_len, model_max_len);
       result.text = "";
-      return result;
+      return finish("invalid_prompt");
     }
 
     if (keep_audio == 0) {
@@ -1076,10 +1090,11 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
           max_seq_len, before_len, after_len);
       Qwen3LogMaxTotalLenSuggestions(max_seq_len, model_max_len);
       result.text = "";
-      return result;
+      return finish("invalid_prompt");
     }
 
     if (keep_audio < fake_audio_token_len) {
+      status.input_truncated = true;
       SHERPA_ONNX_LOGE(
           "qwen3-asr: context_len (%d) exceeds max_total_len (%d). Truncating "
           "audio placeholders: audio_token_len=%d -> keep_audio=%d (before=%d "
@@ -1111,6 +1126,10 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
           std::move(trimmed_audio_features), keep_audio, model_->Allocator());
     }
   }
+
+  status.audio_tokens = audio_token_len;
+  status.context_tokens = context_len;
+  if (status.diagnostics) status.prompt_ids = source_ids;
 
   if (profile) {
     profile->prompt_ms += ProfileElapsedMs(prompt_start);
@@ -1172,6 +1191,7 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   generated_ids.reserve(static_cast<size_t>(max_new_tokens));
 
   const int64_t eos_id = tokenizer_->GetEosTokenId();
+  status.eos_id = eos_id;
   const int64_t pad_id = tokenizer_->GetPadTokenId();
   const int64_t endoftext_id = tokenizer_->GetTokenId("<|endoftext|>");
   const auto is_unexpected_stop_token =
@@ -1182,9 +1202,9 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       };
 
   auto log_shape = logits.GetTensorTypeAndShapeInfo().GetShape();
-  if (log_shape.size() < 3) {
+  if (log_shape.size() < 3 || log_shape[2] <= 0) {
     result.text = "";
-    return result;
+    return finish("invalid_logits");
   }
 
   const int32_t time_dim = static_cast<int32_t>(log_shape[1]);
@@ -1196,14 +1216,35 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
           time_dim, context_len);
     }
     result.text = "";
-    return result;
+    return finish("invalid_logits");
   }
 
   const auto prefill_sample_start =
       profile ? ProfileClock::now() : ProfileClock::time_point{};
   int64_t next_id = SampleTokenFromLogits(logits, last_idx, temperature, top_p);
 
+  status.first_token_id = next_id;
+  if (status.diagnostics) {
+    const auto elem_type = logits.GetTensorTypeAndShapeInfo().GetElementType();
+    const bool half = elem_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 ||
+                      elem_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16;
+    const float *f32 = half ? nullptr : logits.GetTensorData<float>();
+    const uint16_t *f16 = half ? logits.GetTensorData<uint16_t>() : nullptr;
+    const int32_t vocab = static_cast<int32_t>(log_shape[2]);
+    for (int32_t id = 0; id < vocab; ++id) {
+      const size_t offset = static_cast<size_t>(last_idx) * vocab + id;
+      const double v = half ? HalfBitsToFloat(f16[offset]) : f32[offset];
+      if (id == eos_id) status.first_eos_logit = v;
+      if (!std::isfinite(v)) continue;
+      status.first_candidates.emplace_back(id, v);
+      std::stable_sort(status.first_candidates.begin(), status.first_candidates.end(),
+                       [](const auto &a, const auto &b) { return a.second > b.second; });
+      if (status.first_candidates.size() > 5) status.first_candidates.pop_back();
+    }
+  }
+
   if (next_id == eos_id) {
+    status.first_eos_overridden = true;
     if (config_.model_config.debug) {
       float abs_max = TensorAbsMax(logits, 1LL << 20);
       SHERPA_ONNX_LOGE(
@@ -1232,9 +1273,11 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     next_id = SampleTokenWithTemperatureAndTopP(row, is_fp16, vocab_size,
                                                 temperature, top_p, eos_id);
 
+    status.replacement_token_id = next_id;
     if (next_id == eos_id) {
+      status.stop_token_id = next_id;
       result.text = "";
-      return result;
+      return finish("eos");
     }
   }
   if (is_unexpected_stop_token(next_id)) {
@@ -1242,26 +1285,23 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
         "qwen3-asr: first generated token is padding/endoftext; "
         "returning an empty result");
     result.text = "";
-    return result;
+    status.stop_token_id = next_id;
+    return finish("unexpected_stop_token");
   }
   if (profile) {
     profile->prefill_sample_ms += ProfileElapsedMs(prefill_sample_start);
   }
 
   generated_ids.push_back(next_id);
+  ++status.generated_tokens;
+  if (status.diagnostics) status.generated_ids.push_back(next_id);
+  status.reason = "output_limit";
   int32_t cur_len = context_len;
 
   for (int32_t step = 1; step < max_new_tokens; ++step) {
     if (cur_len >= max_seq_len) {
+      status.reason = "context_limit";
       break;
-    }
-
-    if (step + 1 == max_new_tokens) {
-      SHERPA_ONNX_LOGE(
-          "Result is truncated. max_new_tokens %d is too small for "
-          "this audio input. Please either use a shorter audio or use a "
-          "larger max_new_tokens",
-          max_new_tokens);
     }
 
     const int64_t last_token_id = next_id;
@@ -1314,12 +1354,14 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     }
 
     auto log_shape2 = logits.GetTensorTypeAndShapeInfo().GetShape();
-    if (log_shape2.size() < 3) {
+    if (log_shape2.size() < 3 || log_shape2[2] <= 0) {
+      status.reason = "invalid_logits";
       break;
     }
 
     const int32_t time_dim2 = static_cast<int32_t>(log_shape2[1]);
     if (time_dim2 < 1) {
+      status.reason = "invalid_logits";
       break;
     }
 
@@ -1332,9 +1374,13 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     }
 
     if (next_id == eos_id) {
+      status.reason = "eos";
+      status.stop_token_id = next_id;
       break;
     }
     if (is_unexpected_stop_token(next_id)) {
+      status.reason = "unexpected_stop_token";
+      status.stop_token_id = next_id;
       SHERPA_ONNX_LOGE(
           "qwen3-asr: generated padding/endoftext after %d tokens; "
           "stopping before unrelated continuation",
@@ -1343,6 +1389,8 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
     }
 
     generated_ids.push_back(next_id);
+    ++status.generated_tokens;
+    if (status.diagnostics) status.generated_ids.push_back(next_id);
     ++cur_len;
 
     if (IsDegenerateRepetition(generated_ids)) {
@@ -1356,10 +1404,14 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
           "qwen3-asr: decode collapsed into a repetition loop after %d "
           "tokens; truncating the repetition",
           static_cast<int32_t>(generated_ids.size()));
+      status.reason = "repetition_guard";
+      status.repetition_window = kQwen3LoopWindow;
       TrimDegenerateTail(&generated_ids);
       break;
     }
   }
+
+  status.retained_tokens = static_cast<int32_t>(generated_ids.size());
 
   std::vector<int64_t> cleaned_ids = generated_ids;
   if (!generated_ids.empty()) {
@@ -1405,16 +1457,26 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
   }
   if (profile) {
     profile->tokenizer_decode_ms += ProfileElapsedMs(tokenizer_start);
-    profile->generated_tokens = static_cast<int32_t>(generated_ids.size());
+    profile->generated_tokens = status.generated_tokens;
   }
 
+  result.qwen_decode_json = status.AsJson();
   return result;
+
 }
 
 void OfflineRecognizerQwen3ASRImpl::DecodeStreams(OfflineStream **ss,
                                                   int32_t n) const {
   for (int32_t i = 0; i != n; ++i) {
-    Decode(ss[i]);
+    try {
+      Decode(ss[i]);
+    } catch (const std::exception &e) {
+      SHERPA_ONNX_LOGE("qwen3-asr: inference failed: %s", e.what());
+      OfflineRecognitionResult r;
+      Qwen3DecodeStatus status;
+      r.qwen_decode_json = status.AsJson();
+      ss[i]->SetResult(r);
+    }
   }
 }
 
@@ -1450,6 +1512,9 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
   if (f.empty()) {
     OfflineRecognitionResult r;
     r.text = "";
+    Qwen3DecodeStatus status;
+    status.reason = "no_input";
+    r.qwen_decode_json = status.AsJson();
     stream->SetResult(r);
     return;
   }
@@ -1460,12 +1525,18 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
       f.size()) {
     OfflineRecognitionResult r;
     r.text = "";
+    Qwen3DecodeStatus status;
+    status.reason = "invalid_features";
+    r.qwen_decode_json = status.AsJson();
     stream->SetResult(r);
     return;
   }
   if (num_frames < 2) {
     OfflineRecognitionResult r;
     r.text = "";
+    Qwen3DecodeStatus status;
+    status.reason = "invalid_features";
+    r.qwen_decode_json = status.AsJson();
     stream->SetResult(r);
     return;
   }
@@ -1501,6 +1572,9 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
   if (conv_shape.size() < 3 || conv_shape[1] <= 0) {
     OfflineRecognitionResult r;
     r.text = "";
+    Qwen3DecodeStatus status;
+    status.reason = "invalid_features";
+    r.qwen_decode_json = status.AsJson();
     stream->SetResult(r);
     return;
   }
@@ -1534,8 +1608,16 @@ void OfflineRecognizerQwen3ASRImpl::Decode(OfflineStream *stream) const {
         feat_frames, conv_num_frames, expected_audio_token_len, valid_frames);
   }
 
-  OfflineRecognitionResult r =
-      GenerateText(std::move(audio_features), valid_frames, stream, profile);
+  OfflineRecognitionResult r;
+  Qwen3DecodeStatus status;
+  try {
+    r = GenerateText(std::move(audio_features), valid_frames, stream, profile, status);
+  } catch (const std::exception &e) {
+    SHERPA_ONNX_LOGE("qwen3-asr: generation failed: %s", e.what());
+    status.reason = "inference_error";
+    status.retained_tokens = 0;
+    r.qwen_decode_json = status.AsJson();
+  }
 
   const auto homophone_start =
       profile ? ProfileClock::now() : ProfileClock::time_point{};

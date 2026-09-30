@@ -22,6 +22,7 @@
 namespace sherpa_onnx {
 
 struct Qwen3DecodeProfile;
+struct Qwen3DecodeStatus;
 
 // Trims trailing near-silent frames from audio_features (shape [1, A, H]).
 // If every frame's energy stays below the silence threshold, the tensor is
@@ -70,7 +71,8 @@ class OfflineRecognizerQwen3ASRImpl : public OfflineRecognizerImpl {
   OfflineRecognitionResult GenerateText(Ort::Value audio_features,
                                         int32_t audio_token_len,
                                         OfflineStream *stream,
-                                        Qwen3DecodeProfile *profile) const;
+                                        Qwen3DecodeProfile *profile,
+                                        Qwen3DecodeStatus &status) const;
 
   void Decode(OfflineStream *stream) const;
 
