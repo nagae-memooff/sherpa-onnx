@@ -9,6 +9,7 @@
 
 #include "gtest/gtest.h"
 #include "sherpa-onnx/csrc/onnx-utils.h"
+#include "sherpa-onnx/csrc/qwen3-repetition.h"
 
 namespace sherpa_onnx {
 
@@ -95,4 +96,33 @@ TEST(TrimAudioFeatures, NoTrailingSilenceFlagStaysFalse) {
   EXPECT_EQ(trimmed_shape[1], kFrames);
 }
 
+}  // namespace sherpa_onnx
+
+
+namespace sherpa_onnx {
+TEST(QwenPeriodicRepetition, PhrasePeriodsAndThresholdBoundaries) {
+  for (int period : {1, 4, 5, 7, 17, 32}) {
+    const int span = std::max(8, (64 + period - 1) / period) * period;
+    std::vector<int64_t> ids = {90001, 90002, 90003};
+    for (int i = 0; i < span - 1; ++i) ids.push_back(100 + i % period);
+    EXPECT_EQ(FindQwen3PeriodicRepetition(ids).period, 0);
+    ids.push_back(100 + (span - 1) % period);
+    auto hit = FindQwen3PeriodicRepetition(ids);
+    EXPECT_EQ(hit.period, period);
+    EXPECT_EQ(hit.span, span);
+  }
+}
+
+TEST(QwenPeriodicRepetition, FiniteRepeatedPhrasesAndInterruptedCycles) {
+  std::vector<int64_t> ids;
+  // 自然强调、口吃和歌词中少量重复不应触发新增规则。
+  for (int repeat = 0; repeat < 7; ++repeat) {
+    for (int token = 0; token < 17; ++token) ids.push_back(token);
+  }
+  EXPECT_EQ(FindQwen3PeriodicRepetition(ids).period, 0);
+  for (int token = 0; token < 17; ++token) ids.push_back(token);
+  ids[ids.size()-20] = 999;
+  EXPECT_EQ(FindQwen3PeriodicRepetition(ids).period, 0);
+  EXPECT_EQ(FindQwen3PeriodicRepetition({}).period, 0);
+}
 }  // namespace sherpa_onnx

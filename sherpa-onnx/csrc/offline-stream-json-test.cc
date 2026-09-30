@@ -79,3 +79,19 @@ TEST(QwenDecodeStatus, DiagnosticsAndNonfiniteLogits) {
   }
 }
 }  // namespace sherpa_onnx
+
+namespace sherpa_onnx {
+TEST(QwenDecodeStatus, PeriodicGuardRemainsIncomplete) {
+  Qwen3DecodeStatus status;
+  status.reason = "repetition_guard";
+  status.generated_tokens = 94;
+  status.retained_tokens = 24;
+  status.repetition_period = 7;
+  status.repetition_window = 70;
+  auto value = nlohmann::json::parse(status.AsJson());
+  EXPECT_FALSE(value.at("complete").get<bool>());
+  EXPECT_EQ(value.at("repetition_period"), 7);
+  EXPECT_EQ(value.at("repetition_window"), 70);
+  EXPECT_EQ(value.at("removed_tokens"), 70);
+}
+}  // namespace sherpa_onnx

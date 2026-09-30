@@ -3,6 +3,7 @@
 // Copyright (c)  2026 zengyw
 
 #include "sherpa-onnx/csrc/offline-recognizer-qwen3-asr-impl.h"
+#include "sherpa-onnx/csrc/qwen3-repetition.h"
 
 #include <algorithm>
 #include <array>
@@ -1407,6 +1408,16 @@ OfflineRecognitionResult OfflineRecognizerQwen3ASRImpl::GenerateText(
       status.reason = "repetition_guard";
       status.repetition_window = kQwen3LoopWindow;
       TrimDegenerateTail(&generated_ids);
+      break;
+    }
+
+    const auto repetition = FindQwen3PeriodicRepetition(generated_ids);
+    if (repetition.period != 0) {
+      status.reason = "repetition_guard";
+      status.repetition_period = repetition.period;
+      status.repetition_window = repetition.span;
+      // 仅删除有证据的重复窗口；原始 token 保留在 diagnostics 中。
+      generated_ids.resize(generated_ids.size() - repetition.span);
       break;
     }
   }

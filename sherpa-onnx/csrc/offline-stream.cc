@@ -203,8 +203,10 @@ class OfflineStream::Impl {
   void FeedWhisper(const float *samples, int32_t n) {
     if (whisper_align_to_stft_center_) {
       // Qwen 使用完整片段的真实边界；分次输入不能提前固定反射窗口。
-      if (n > 0) centered_whisper_samples_.insert(
-          centered_whisper_samples_.end(), samples, samples + n);
+      if (n > 0) {
+        centered_whisper_samples_.insert(centered_whisper_samples_.end(),
+                                         samples, samples + n);
+      }
       return;
     }
     whisper_fbank_->AcceptWaveform(config_.sampling_rate, samples, n);

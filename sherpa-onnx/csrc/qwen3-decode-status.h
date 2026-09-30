@@ -26,6 +26,7 @@ struct Qwen3DecodeStatus {
   int32_t generated_tokens = 0;
   int32_t retained_tokens = 0;
   int32_t repetition_window = 0;
+  int32_t repetition_period = 0;
   int64_t eos_id = -1;
   int64_t first_token_id = -1;
   int64_t replacement_token_id = -1;
@@ -58,7 +59,8 @@ struct Qwen3DecodeStatus {
        << ",\"generated_tokens\":" << generated_tokens
        << ",\"retained_tokens\":" << retained_tokens
        << ",\"removed_tokens\":" << generated_tokens - retained_tokens
-       << ",\"repetition_window\":" << repetition_window;
+       << ",\"repetition_window\":" << repetition_window
+       << ",\"repetition_period\":" << repetition_period;
     if (diagnostics) {
       os << ",\"diagnostics\":{\"eos_id\":" << eos_id
          << ",\"first_token_id\":" << first_token_id
