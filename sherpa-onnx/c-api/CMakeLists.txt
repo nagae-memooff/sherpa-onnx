@@ -37,3 +37,21 @@ install(
   DESTINATION
     include/sherpa-onnx/c-api
 )
+
+# 每个错误场景在独立进程运行，避免回归时终止整个测试调度器。
+if(SHERPA_ONNX_ENABLE_TESTS)
+  add_executable(sherpa-onnx-model-loading-exception-test
+    model-loading-exception-test.cc)
+  target_link_libraries(sherpa-onnx-model-loading-exception-test
+    PRIVATE sherpa-onnx-c-api)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME sherpa-onnx-model-loading-exception-test
+      COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/test_model_loading_exceptions.py
+        $<TARGET_FILE:sherpa-onnx-model-loading-exception-test>
+        ${CMAKE_CURRENT_BINARY_DIR}/model-loading-exception-fixtures)
+    set_tests_properties(sherpa-onnx-model-loading-exception-test
+      PROPERTIES TIMEOUT 180)
+  endif()
+endif()

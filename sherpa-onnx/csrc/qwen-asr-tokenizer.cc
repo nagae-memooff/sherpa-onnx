@@ -11,6 +11,7 @@
 #include <limits>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -1113,7 +1114,7 @@ void QwenAsrTokenizer::InitFromContents(const std::string &vocab_content,
   if (vocab_content.empty()) {
     SHERPA_ONNX_LOGE("Failed to read vocab.json from: %s",
                      tokenizer_dir.c_str());
-    SHERPA_ONNX_EXIT(-1);
+    throw std::runtime_error("Invalid Qwen3-ASR tokenizer or prompt tokens");
   }
 
   token2id_.clear();
@@ -1125,13 +1126,13 @@ void QwenAsrTokenizer::InitFromContents(const std::string &vocab_content,
   if (!ParseVocab(vocab_content, &token2id_, &id2token_)) {
     SHERPA_ONNX_LOGE("Failed to parse vocab.json from: %s",
                      tokenizer_dir.c_str());
-    SHERPA_ONNX_EXIT(-1);
+    throw std::runtime_error("Invalid Qwen3-ASR tokenizer or prompt tokens");
   }
 
   if (!merges_content.empty() && !ParseMerges(merges_content, &merges_rank_)) {
     SHERPA_ONNX_LOGE("Failed to parse merges.txt from: %s",
                      tokenizer_dir.c_str());
-    SHERPA_ONNX_EXIT(-1);
+    throw std::runtime_error("Invalid Qwen3-ASR tokenizer or prompt tokens");
   }
 
   ParseAddedTokens(config_content, &token2id_, &id2token_);

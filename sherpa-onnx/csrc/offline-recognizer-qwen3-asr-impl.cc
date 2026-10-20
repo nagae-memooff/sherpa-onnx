@@ -18,6 +18,7 @@
 #include <numeric>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -579,13 +580,13 @@ void OfflineRecognizerQwen3ASRImpl::InitPromptTemplateIds() {
 
   if (audio_pad_ids_.empty()) {
     SHERPA_ONNX_LOGE("Failed to tokenize <|audio_pad|> for qwen3-asr prompt");
-    SHERPA_ONNX_EXIT(-1);
+    throw std::runtime_error("Invalid Qwen3-ASR tokenizer or prompt tokens");
   }
 
   asr_text_token_id_ = tokenizer_->GetTokenId("<asr_text>");
   if (asr_text_token_id_ < 0) {
     SHERPA_ONNX_LOGE("Failed to locate <asr_text> token id for qwen3-asr");
-    SHERPA_ONNX_EXIT(-1);
+    throw std::runtime_error("Invalid Qwen3-ASR tokenizer or prompt tokens");
   }
 }
 

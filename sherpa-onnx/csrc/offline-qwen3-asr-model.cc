@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -336,7 +337,7 @@ class OfflineQwen3ASRModel::Impl {
       if (buf.empty()) {
         SHERPA_ONNX_LOGE("Failed to read qwen3_asr.conv_frontend: %s",
                          c.conv_frontend.c_str());
-        SHERPA_ONNX_EXIT(-1);
+        throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
       }
       InitConvFrontend(buf.data(), buf.size());
     }
@@ -345,7 +346,7 @@ class OfflineQwen3ASRModel::Impl {
       if (buf.empty()) {
         SHERPA_ONNX_LOGE("Failed to read qwen3_asr.encoder: %s",
                          c.encoder.c_str());
-        SHERPA_ONNX_EXIT(-1);
+        throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
       }
       InitEncoder(buf.data(), buf.size());
     }
@@ -354,7 +355,7 @@ class OfflineQwen3ASRModel::Impl {
       if (buf.empty()) {
         SHERPA_ONNX_LOGE("Failed to read qwen3_asr.decoder: %s",
                          c.decoder.c_str());
-        SHERPA_ONNX_EXIT(-1);
+        throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
       }
       InitDecoder(buf.data(), buf.size());
     }
@@ -446,7 +447,7 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_LOGE(
           "Please pass buffer data or initialize conv session outside of "
           "this function");
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
     }
 
     InitSessionIo(conv_sess_.get(), &conv_input_names_, &conv_input_names_ptr_,
@@ -455,13 +456,13 @@ class OfflineQwen3ASRModel::Impl {
     if (conv_input_names_.size() != 1) {
       SHERPA_ONNX_LOGE("conv_frontend must have exactly 1 input, got %zu",
                        conv_input_names_.size());
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
     }
 
     if (conv_output_names_.size() != 1) {
       SHERPA_ONNX_LOGE("conv_frontend must have exactly 1 output, got %zu",
                        conv_output_names_.size());
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
     }
   }
 
@@ -473,7 +474,7 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_LOGE(
           "Please pass buffer data or initialize encoder session outside of "
           "this function");
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
     }
 
     InitEncoderSession();
@@ -487,13 +488,13 @@ class OfflineQwen3ASRModel::Impl {
     if (encoder_input_names_.size() != 2) {
       SHERPA_ONNX_LOGE("encoder must have exactly 2 inputs, got %zu",
                        encoder_input_names_.size());
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitEncoderSession");
     }
 
     if (encoder_output_names_.size() != 1) {
       SHERPA_ONNX_LOGE("encoder must have exactly 1 output, got %zu",
                        encoder_output_names_.size());
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitEncoderSession");
     }
   }
 
@@ -505,7 +506,7 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_LOGE(
           "Please pass buffer data or initialize decoder session outside of "
           "this function");
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model structure or data");
     }
 
     InitDecoderSession();
@@ -521,7 +522,7 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_LOGE(
           "Decoder model outputs mismatch: expected 1+2*num_layers, got %zu",
           num_dec_outputs);
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitDecoderSession");
     }
     num_layers_ = static_cast<int32_t>((num_dec_outputs - 1) / 2);
 
@@ -531,7 +532,7 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_LOGE(
           "Decoder model inputs mismatch: expected %d (=4+2*num_layers) got %d",
           expected_inputs, actual_inputs);
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitDecoderSession");
     }
 
     auto past_key_ti =
@@ -546,7 +547,7 @@ class OfflineQwen3ASRModel::Impl {
       SHERPA_ONNX_LOGE(
           "Failed to determine max_total_len (past_key dim1 is dynamic or "
           "invalid; set --qwen3-asr-max-total-len)");
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitDecoderSession");
     }
 
     kv_in_type_ = GetSessionInputElemType(decoder_sess_.get(),
@@ -558,14 +559,14 @@ class OfflineQwen3ASRModel::Impl {
           kv_in_type_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16)) {
       SHERPA_ONNX_LOGE("Decoder past_key elem_type=%d not supported",
                        (int)kv_in_type_);
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitDecoderSession");
     }
     if (!(kv_in_type_v_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
           kv_in_type_v_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16 ||
           kv_in_type_v_ == ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16)) {
       SHERPA_ONNX_LOGE("Decoder past_value elem_type=%d not supported",
                        (int)kv_in_type_v_);
-      SHERPA_ONNX_EXIT(-1);
+      throw std::runtime_error("Invalid Qwen3-ASR model: InitDecoderSession");
     }
   }
 
