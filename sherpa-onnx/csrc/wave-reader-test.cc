@@ -27,24 +27,25 @@ class TempFile {
 
   explicit TempFile(const std::string &suffix) {
 #if defined(_WIN32)
-    char temp_path[MAX_PATH];
     char temp_file[MAX_PATH];
-    GetTempPathA(MAX_PATH, temp_path);
-    GetTempFileNameA(temp_path, "sot", 0, temp_file);
+    if (GetTempFileNameA(SHERPA_ONNX_TEST_TMP_DIR, "sot", 0, temp_file) == 0) {
+      return;
+    }
     path_ = temp_file;
     if (!suffix.empty()) {
       path_ += suffix;
       std::remove(temp_file);  // Remove the file without suffix
     }
 #else
-    char temp_template[] = "/tmp/sherpa_onnx_test_XXXXXX";
-    int fd = mkstemp(temp_template);
+    std::string temp_template =
+        std::string(SHERPA_ONNX_TEST_TMP_DIR) + "/sherpa_onnx_test_XXXXXX";
+    int fd = mkstemp(temp_template.data());
     if (fd != -1) {
       close(fd);
       path_ = temp_template;
       if (!suffix.empty()) {
         path_ += suffix;
-        std::remove(temp_template);  // Remove the file without suffix
+        std::remove(temp_template.c_str());  // Remove the file without suffix
       }
     }
 #endif

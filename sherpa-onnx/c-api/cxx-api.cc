@@ -400,6 +400,10 @@ static SherpaOnnxOfflineRecognizerConfig Convert(
   c.hr.lexicon = config.hr.lexicon.c_str();
   c.hr.rule_fsts = config.hr.rule_fsts.c_str();
 
+  c.ctc_fst_decoder_config.graph = config.ctc_fst_decoder_config.graph.c_str();
+  c.ctc_fst_decoder_config.max_active =
+      config.ctc_fst_decoder_config.max_active;
+
   return c;
 }
 
@@ -524,6 +528,7 @@ OfflineTts OfflineTts::Create(const OfflineTtsConfig &config) {
   c.model.kitten.tokens = config.model.kitten.tokens.c_str();
   c.model.kitten.data_dir = config.model.kitten.data_dir.c_str();
   c.model.kitten.length_scale = config.model.kitten.length_scale;
+  c.model.kitten.lexicon = config.model.kitten.lexicon.c_str();
 
   c.model.zipvoice.tokens = config.model.zipvoice.tokens.c_str();
   c.model.zipvoice.encoder = config.model.zipvoice.encoder.c_str();
@@ -591,6 +596,13 @@ int32_t OfflineTts::NumSpeakers() const {
   return SherpaOnnxOfflineTtsNumSpeakers(p_);
 }
 
+std::string OfflineTts::Lang() const {
+  const char *s = SherpaOnnxOfflineTtsLang(p_);
+  std::string ans = s;
+  SherpaOnnxDestroyOfflineTtsLang(s);
+  return ans;
+}
+
 GeneratedAudio OfflineTts::Generate(const std::string &text,
                                     int32_t sid /*= 0*/, float speed /*= 1.0*/,
                                     OfflineTtsCallback callback /*= nullptr*/,
@@ -636,6 +648,41 @@ GeneratedAudio OfflineTts::Generate(const std::string &text,
   nlohmann::json j = config.extra;
   std::string s = j.dump();
   c.extra = s.c_str();
+
+  // Flatten phoneme_codepoints; the C API takes a flat array + per-sentence
+  // lengths.
+  std::vector<int32_t> flat_codepoints;
+  std::vector<int32_t> codepoint_lens;
+  codepoint_lens.reserve(config.phoneme_codepoints.size());
+  for (const auto &sentence : config.phoneme_codepoints) {
+    flat_codepoints.insert(flat_codepoints.end(), sentence.begin(),
+                           sentence.end());
+    codepoint_lens.push_back(static_cast<int32_t>(sentence.size()));
+  }
+
+  if (!codepoint_lens.empty()) {
+    c.phoneme_codepoints = flat_codepoints.data();
+    c.phoneme_codepoints_lens = codepoint_lens.data();
+    c.phoneme_codepoints_num_sentences =
+        static_cast<int32_t>(codepoint_lens.size());
+  }
+
+  // Flatten tokens; the C API takes a flat array + per-sentence lengths.
+  std::vector<const char *> flat_tokens;
+  std::vector<int32_t> token_lens;
+  token_lens.reserve(config.tokens.size());
+  for (const auto &sentence : config.tokens) {
+    token_lens.push_back(static_cast<int32_t>(sentence.size()));
+    for (const auto &tok : sentence) {
+      flat_tokens.push_back(tok.c_str());
+    }
+  }
+
+  if (!token_lens.empty()) {
+    c.tokens = flat_tokens.data();
+    c.tokens_lens = token_lens.data();
+    c.tokens_num_sentences = static_cast<int32_t>(token_lens.size());
+  }
 
   const SherpaOnnxGeneratedAudio *audio =
       SherpaOnnxOfflineTtsGenerateWithConfig(p_, text.c_str(), &c, callback,
@@ -905,7 +952,7 @@ void CircularBuffer::Push(const float *samples, int32_t n) const {
   SherpaOnnxCircularBufferPush(p_, samples, n);
 }
 
-std::vector<float> CircularBuffer::Get(int32_t start_index, int32_t n) const {
+std::vector<float> CircularBuffer::Get(int64_t start_index, int32_t n) const {
   const float *samples = SherpaOnnxCircularBufferGet(p_, start_index, n);
   if (!samples) return {};
 
@@ -924,7 +971,7 @@ int32_t CircularBuffer::Size() const {
   return SherpaOnnxCircularBufferSize(p_);
 }
 
-int32_t CircularBuffer::Head() const {
+int64_t CircularBuffer::Head() const {
   return SherpaOnnxCircularBufferHead(p_);
 }
 
@@ -1439,6 +1486,10 @@ int32_t SpeakerEmbeddingManager::NumSpeakers() const {
   return SherpaOnnxSpeakerEmbeddingManagerNumSpeakers(p_);
 }
 
+int32_t SpeakerEmbeddingManager::Dim() const {
+  return SherpaOnnxSpeakerEmbeddingManagerDim(p_);
+}
+
 std::vector<std::string> SpeakerEmbeddingManager::GetAllSpeakers() const {
   const char *const *names =
       SherpaOnnxSpeakerEmbeddingManagerGetAllSpeakers(p_);
@@ -1449,6 +1500,19 @@ std::vector<std::string> SpeakerEmbeddingManager::GetAllSpeakers() const {
     }
     SherpaOnnxSpeakerEmbeddingManagerFreeAllSpeakers(names);
   }
+  return ans;
+}
+
+std::vector<float> SpeakerEmbeddingManager::GetEmbedding(
+    const std::string &name) const {
+  const float *v =
+      SherpaOnnxSpeakerEmbeddingManagerGetEmbedding(p_, name.c_str());
+  if (!v) {
+    return {};
+  }
+  int32_t dim = Dim();
+  std::vector<float> ans(v, v + dim);
+  SherpaOnnxSpeakerEmbeddingManagerDestroyEmbedding(v);
   return ans;
 }
 

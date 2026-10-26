@@ -9,6 +9,7 @@ on:
     paths:
       - '.github/workflows/run-python-test.yaml'
       - '.github/scripts/test-python.sh'
+      - '.github/scripts/test-python-tts-frontends.sh'
       - '.github/scripts/test-speaker-recognition-python.sh'
       - 'cmake/**'
       - 'sherpa-onnx/csrc/*'
@@ -19,6 +20,7 @@ on:
     paths:
       - '.github/workflows/run-python-test.yaml'
       - '.github/scripts/test-python.sh'
+      - '.github/scripts/test-python-tts-frontends.sh'
       - '.github/scripts/test-speaker-recognition-python.sh'
       - 'cmake/**'
       - 'sherpa-onnx/csrc/*'
@@ -58,6 +60,8 @@ jobs:
             python-version: "3.13"
           - os: ubuntu-latest
             python-version: "3.14"
+          - os: ubuntu-latest
+            python-version: "3.15"
 
           # Linux arm64
           - os: ubuntu-24.04-arm
@@ -70,6 +74,8 @@ jobs:
             python-version: "3.13"
           - os: ubuntu-24.04-arm
             python-version: "3.14"
+          - os: ubuntu-24.04-arm
+            python-version: "3.15"
 
           # macOS x64
           - os: macos-15-intel
@@ -86,6 +92,10 @@ jobs:
             python-version: "3.12"
           - os: macos-latest
             python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.15"
 
           # Windows x64
           - os: windows-2022
@@ -102,6 +112,8 @@ jobs:
             python-version: "3.13"
           - os: windows-2022
             python-version: "3.14"
+          - os: windows-2022
+            python-version: "3.15"
 
           # Windows arm64
           - os: windows-11-arm
@@ -112,6 +124,8 @@ jobs:
             python-version: "3.13"
           - os: windows-11-arm
             python-version: "3.14"
+          - os: windows-11-arm
+            python-version: "3.15"
 
 
     steps:
@@ -142,7 +156,10 @@ jobs:
           key: ${{ matrix.os }}-python-${{ matrix.python-version }}
 
       - name: sccache (Windows)
-        if: runner.os == 'Windows'
+        # sccache is disabled on windows-11-arm: sccache-action extracts its
+        # archive with pwsh, which crashes intermittently on this runner
+        # ("Internal CLR error. 0x80131506") and fails the job before the build.
+        if: runner.os == 'Windows' && matrix.os != 'windows-11-arm'
         uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Set up MSVC
@@ -158,8 +175,13 @@ jobs:
       - name: Install Python dependencies
         shell: bash
         run: |
-          python3 -m pip install --upgrade pip numpy pypinyin soundfile 
+          python3 -m pip install --upgrade pip numpy pypinyin soundfile
           python3 -m pip install wheel twine setuptools
+          # External phonemizers used by the test-offline-tts-*-phonemize.py
+          # examples. piper_phonemize ships espeak-ng inside the wheel; it is
+          # a pip dependency, not a build dependency of sherpa-onnx.
+          python3 -m pip install --upgrade 'misaki[zh]' kaldifst
+          python3 -m pip install --upgrade piper_phonemize -f https://k2-fsa.github.io/icefall/piper_phonemize.html
 
       - name: Install librosa (Linux/macOS)
         if: runner.os != 'Windows'
@@ -240,8 +262,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          export CMAKE_C_COMPILER_LAUNCHER=sccache
-          export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+          if command -v sccache >/dev/null 2>&1; then
+            export CMAKE_C_COMPILER_LAUNCHER=sccache
+            export CMAKE_CXX_COMPILER_LAUNCHER=sccache
+          fi
 
           python3 -m pip install .
 
@@ -301,6 +325,7 @@ jobs:
           echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
 
           .github/scripts/test-python.sh
+          .github/scripts/test-python-tts-frontends.sh
           .github/scripts/test-speaker-recognition-python.sh
 
       - name: Test sherpa-onnx (macOS/Windows)
@@ -309,6 +334,7 @@ jobs:
         run: |
           export OS=${{ matrix.os }}
           .github/scripts/test-python.sh
+          .github/scripts/test-python-tts-frontends.sh
           .github/scripts/test-speaker-recognition-python.sh
 
       - uses: actions/upload-artifact@v4

@@ -1,9 +1,12 @@
 # File description
 
-- [./http_server.py](./http_server.py) It defines which files to server.
+- [./http_server.py](./http_server.py) It defines which files to serve.
   Files are saved in [./web](./web).
 - [non_streaming_server.py](./non_streaming_server.py) WebSocket server for
   non-streaming models.
+- [Orukeet](./orukeet.md) Download and serve the multilingual Orukeet model
+  using the existing NeMo transducer runtime. The same server options support
+  Parakeet TDT v3.
 - [vad-remove-non-speech-segments.py](./vad-remove-non-speech-segments.py) It uses
   [silero-vad](https://github.com/snakers4/silero-vad) to remove non-speech
   segments and concatenate all speech segments into a single one.

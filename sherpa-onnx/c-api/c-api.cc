@@ -724,6 +724,11 @@ static sherpa_onnx::OfflineRecognizerConfig GetOfflineRecognizerConfig(
   recognizer_config.hr.lexicon = SHERPA_ONNX_OR(config->hr.lexicon, "");
   recognizer_config.hr.rule_fsts = SHERPA_ONNX_OR(config->hr.rule_fsts, "");
 
+  recognizer_config.ctc_fst_decoder_config.graph =
+      SHERPA_ONNX_OR(config->ctc_fst_decoder_config.graph, "");
+  recognizer_config.ctc_fst_decoder_config.max_active =
+      SHERPA_ONNX_OR(config->ctc_fst_decoder_config.max_active, 3000);
+
   if (config->model_config.debug) {
 #if __OHOS__
     auto str_vec = sherpa_onnx::SplitString(recognizer_config.ToString(), 128);
@@ -1344,7 +1349,7 @@ void SherpaOnnxCircularBufferPush(const SherpaOnnxCircularBuffer *buffer,
 }
 
 const float *SherpaOnnxCircularBufferGet(const SherpaOnnxCircularBuffer *buffer,
-                                         int32_t start_index, int32_t n) {
+                                         int64_t start_index, int32_t n) {
   if (!buffer) return nullptr;
   std::vector<float> v = buffer->impl->Get(start_index, n);
 
@@ -1373,7 +1378,7 @@ int32_t SherpaOnnxCircularBufferSize(const SherpaOnnxCircularBuffer *buffer) {
   return buffer->impl->Size();
 }
 
-int32_t SherpaOnnxCircularBufferHead(const SherpaOnnxCircularBuffer *buffer) {
+int64_t SherpaOnnxCircularBufferHead(const SherpaOnnxCircularBuffer *buffer) {
   if (!buffer) return 0;
   return buffer->impl->Head();
 }
@@ -1642,6 +1647,8 @@ static sherpa_onnx::OfflineTtsConfig GetOfflineTtsConfig(
       SHERPA_ONNX_OR(config->model.kitten.data_dir, "");
   tts_config.model.kitten.length_scale =
       SHERPA_ONNX_OR(config->model.kitten.length_scale, 1.0);
+  tts_config.model.kitten.lexicon =
+      SHERPA_ONNX_OR(config->model.kitten.lexicon, "");
 
   // zipvoice
   tts_config.model.zipvoice.tokens =
@@ -1759,6 +1766,19 @@ int32_t SherpaOnnxOfflineTtsNumSpeakers(const SherpaOnnxOfflineTts *tts) {
   return tts->impl->NumSpeakers();
 }
 
+const char *SherpaOnnxOfflineTtsLang(const SherpaOnnxOfflineTts *tts) {
+  std::string lang = tts->impl->Lang();
+  char *p = new char[lang.size() + 1];
+  std::copy(lang.begin(), lang.end(), p);
+  p[lang.size()] = 0;
+  return p;
+}
+
+void SherpaOnnxDestroyOfflineTtsLang(const char *s) {
+  if (!s) return;
+  delete[] s;
+}
+
 static const SherpaOnnxGeneratedAudio *SherpaOnnxOfflineTtsGenerateInternal(
     const SherpaOnnxOfflineTts *tts, const char *text, int32_t sid, float speed,
     std::function<int32_t(const float *, int32_t, float)> callback) {
@@ -1785,10 +1805,39 @@ static const SherpaOnnxGeneratedAudio *SherpaOnnxOfflineTtsGenerateInternal(
   return ans;
 }
 
+// Sentence lengths must all be > 0: a non-positive n makes p + n a reversed
+// range, which is undefined behavior in the vector range constructor below.
+static bool ValidateSentenceLens(const int32_t *lens, int32_t num_sentences,
+                                 const char *name) {
+  for (int32_t i = 0; i != num_sentences; ++i) {
+    if (lens[i] <= 0) {
+      SHERPA_ONNX_LOGE("%s_lens[%d] = %d. It must be > 0", name, i, lens[i]);
+      return false;
+    }
+  }
+  return true;
+}
+
 static const SherpaOnnxGeneratedAudio *SherpaOnnxOfflineTtsGenerateInternal(
     const SherpaOnnxOfflineTts *tts, const char *text,
     const SherpaOnnxGenerationConfig *config,
     std::function<int32_t(const float *, int32_t, float)> callback) {
+  // phoneme_codepoints and tokens are mutually exclusive. Validate them
+  // before doing any work. Neither being set is fine: the caller may rely on
+  // text plus a lexicon.
+  bool has_phoneme_codepoints = config->phoneme_codepoints &&
+                                config->phoneme_codepoints_lens &&
+                                config->phoneme_codepoints_num_sentences > 0;
+  bool has_tokens =
+      config->tokens && config->tokens_lens && config->tokens_num_sentences > 0;
+
+  if (has_phoneme_codepoints && has_tokens) {
+    SHERPA_ONNX_LOGE(
+        "Both phoneme_codepoints and tokens are given. Please set only one of "
+        "them.");
+    return nullptr;
+  }
+
   sherpa_onnx::GenerationConfig cfg;
   if (config->reference_audio) {
     if (config->reference_audio_len <= 0) {
@@ -1821,6 +1870,45 @@ static const SherpaOnnxGeneratedAudio *SherpaOnnxOfflineTtsGenerateInternal(
     } catch (const nlohmann::json::parse_error &e) {
       SHERPA_ONNX_LOGE("Failed to parse extra JSON: '%s'", e.what());
       SHERPA_ONNX_LOGE("Ignore the extra opt");
+    }
+  }
+
+  // phoneme_codepoints and tokens are flattened; unflatten them here.
+  if (has_phoneme_codepoints) {
+    if (!ValidateSentenceLens(config->phoneme_codepoints_lens,
+                              config->phoneme_codepoints_num_sentences,
+                              "phoneme_codepoints")) {
+      return nullptr;
+    }
+
+    cfg.phoneme_codepoints.reserve(config->phoneme_codepoints_num_sentences);
+    const int32_t *p = config->phoneme_codepoints;
+    for (int32_t i = 0; i != config->phoneme_codepoints_num_sentences; ++i) {
+      int32_t n = config->phoneme_codepoints_lens[i];
+      cfg.phoneme_codepoints.emplace_back(p, p + n);
+      p += n;
+    }
+  }
+
+  if (has_tokens) {
+    if (!ValidateSentenceLens(config->tokens_lens,
+                              config->tokens_num_sentences, "tokens")) {
+      return nullptr;
+    }
+
+    cfg.tokens.reserve(config->tokens_num_sentences);
+    const char *const *p = config->tokens;
+    for (int32_t i = 0; i != config->tokens_num_sentences; ++i) {
+      int32_t n = config->tokens_lens[i];
+      std::vector<std::string> sentence;
+      sentence.reserve(n);
+      for (int32_t k = 0; k != n; ++k) {
+        // A C caller may legitimately pass a NULL entry here; constructing
+        // std::string from nullptr is undefined behaviour.
+        sentence.emplace_back(p[k] != nullptr ? p[k] : "");
+      }
+      cfg.tokens.push_back(std::move(sentence));
+      p += n;
     }
   }
 
@@ -2076,6 +2164,18 @@ int32_t SherpaOnnxOfflineTtsSampleRate(const SherpaOnnxOfflineTts *tts) {
 int32_t SherpaOnnxOfflineTtsNumSpeakers(const SherpaOnnxOfflineTts *tts) {
   SHERPA_ONNX_LOGE("TTS is not enabled. Please rebuild sherpa-onnx");
   return 0;
+}
+
+const char *SherpaOnnxOfflineTtsLang(const SherpaOnnxOfflineTts *tts) {
+  SHERPA_ONNX_LOGE("TTS is not enabled. Please rebuild sherpa-onnx");
+  char *p = new char[1];
+  p[0] = 0;
+  return p;
+}
+
+void SherpaOnnxDestroyOfflineTtsLang(const char *s) {
+  if (!s) return;
+  delete[] s;
 }
 
 const SherpaOnnxGeneratedAudio *SherpaOnnxOfflineTtsGenerate(
@@ -2570,6 +2670,11 @@ int32_t SherpaOnnxSpeakerEmbeddingManagerNumSpeakers(
   return p->impl->NumSpeakers();
 }
 
+int32_t SherpaOnnxSpeakerEmbeddingManagerDim(
+    const SherpaOnnxSpeakerEmbeddingManager *p) {
+  return p->impl->Dim();
+}
+
 const char *const *SherpaOnnxSpeakerEmbeddingManagerGetAllSpeakers(
     const SherpaOnnxSpeakerEmbeddingManager *manager) {
   std::vector<std::string> all_speakers = manager->impl->GetAllSpeakers();
@@ -2598,6 +2703,27 @@ void SherpaOnnxSpeakerEmbeddingManagerFreeAllSpeakers(
   }
 
   delete[] names;
+}
+
+const float *SherpaOnnxSpeakerEmbeddingManagerGetEmbedding(
+    const SherpaOnnxSpeakerEmbeddingManager *p, const char *name) {
+  if (!p || !name) {
+    return nullptr;
+  }
+
+  std::vector<float> embedding = p->impl->GetEmbedding(name);
+  if (embedding.empty()) {
+    return nullptr;
+  }
+
+  float *ans = new float[embedding.size()];
+  std::copy(embedding.begin(), embedding.end(), ans);
+  return ans;
+}
+
+void SherpaOnnxSpeakerEmbeddingManagerDestroyEmbedding(const float *v) {
+  if (!v) return;
+  delete[] v;
 }
 
 struct SherpaOnnxAudioTagging {

@@ -298,6 +298,35 @@ jobs:
           rm $name
           rm -rf sherpa-onnx-wenetspeech-*
 
+      - name: Test Zipformer CTC with an HLG graph
+        shell: bash
+        run: |
+          name=zipformer-ctc-hlg-c-api
+          gcc -o $name ./c-api-examples/$name.c \
+            -I ./build/install/include \
+            -L ./build/install/lib/ \
+            -l sherpa-onnx-c-api \
+            -l onnxruntime
+
+          ls -lh $name
+
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-zipformer-ctc-en-2023-10-02.tar.bz2
+          tar xvf sherpa-onnx-zipformer-ctc-en-2023-10-02.tar.bz2
+          rm sherpa-onnx-zipformer-ctc-en-2023-10-02.tar.bz2
+
+          export LD_LIBRARY_PATH=$PWD/build/install/lib:$LD_LIBRARY_PATH
+          export DYLD_LIBRARY_PATH=$PWD/build/install/lib:$DYLD_LIBRARY_PATH
+
+          # A clean exit proves nothing here: without a graph the decoder
+          # still succeeds, it just decodes freely. The word ids show up only
+          # when the FST decoder ran.
+          ./$name > /tmp/hlg.txt 2>&1
+          cat /tmp/hlg.txt
+          grep -q '"words": \[[0-9]' /tmp/hlg.txt
+
+          rm $name
+          rm -rf sherpa-onnx-zipformer-ctc-en-*
+
       - name: Test Dolphin CTC
         shell: bash
         run: |
@@ -974,6 +1003,8 @@ jobs:
 
           curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos_24khz.onnx
 
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+
           export LD_LIBRARY_PATH=$PWD/build/install/lib:$LD_LIBRARY_PATH
           export DYLD_LIBRARY_PATH=$PWD/build/install/lib:$DYLD_LIBRARY_PATH
 
@@ -982,6 +1013,7 @@ jobs:
           rm $name
           rm -rf sherpa-onnx-zipvoice-distill-int8-zh-en-emilia
           rm -f vocos_24khz.onnx
+          rm -f lexicon-en-us.txt
 
           ls -lh ./generated-zipvoice-zh-en-c.wav
 
@@ -1006,6 +1038,8 @@ jobs:
           tar xf kitten-nano-en-v0_1-fp16.tar.bz2
           rm kitten-nano-en-v0_1-fp16.tar.bz2
 
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+
           export LD_LIBRARY_PATH=$PWD/build/install/lib:$LD_LIBRARY_PATH
           export DYLD_LIBRARY_PATH=$PWD/build/install/lib:$DYLD_LIBRARY_PATH
 
@@ -1013,6 +1047,7 @@ jobs:
 
           rm $name
           rm -rf kitten-nano-en-v0_1-fp16
+          rm -f lexicon-en-us.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -1053,6 +1088,8 @@ jobs:
           tar xf kokoro-en-v0_19.tar.bz2
           rm kokoro-en-v0_19.tar.bz2
 
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+
           export LD_LIBRARY_PATH=$PWD/build/install/lib:$LD_LIBRARY_PATH
           export DYLD_LIBRARY_PATH=$PWD/build/install/lib:$DYLD_LIBRARY_PATH
 
@@ -1060,6 +1097,7 @@ jobs:
 
           rm ./kokoro-tts-en-c-api
           rm -rf kokoro-en-*
+          rm -f lexicon-en-us.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -1105,6 +1143,8 @@ jobs:
 
           curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos-22khz-univ.onnx
 
+          curl -SL -O https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/lexicon-en-us.txt
+
           export LD_LIBRARY_PATH=$PWD/build/install/lib:$LD_LIBRARY_PATH
           export DYLD_LIBRARY_PATH=$PWD/build/install/lib:$DYLD_LIBRARY_PATH
 
@@ -1113,6 +1153,7 @@ jobs:
           rm ./matcha-tts-en-c-api
           rm -rf matcha-icefall-*
           rm vocos-22khz-univ.onnx
+          rm -f lexicon-en-us.txt
 
       - uses: actions/upload-artifact@v4
         with:

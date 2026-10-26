@@ -27,16 +27,14 @@ class TempConfigFile {
  public:
   explicit TempConfigFile(const std::string &contents) {
 #if defined(_WIN32)
-    char temp_path[MAX_PATH];
     char temp_file[MAX_PATH];
-    DWORD path_len = GetTempPathA(MAX_PATH, temp_path);
-    if (path_len > 0 && path_len < MAX_PATH &&
-        GetTempFileNameA(temp_path, "soc", 0, temp_file) != 0) {
+    if (GetTempFileNameA(SHERPA_ONNX_TEST_TMP_DIR, "soc", 0, temp_file) != 0) {
       path_ = temp_file;
     }
 #else
-    char temp_template[] = "/tmp/sherpa_onnx_session_test_XXXXXX";
-    int fd = mkstemp(temp_template);
+    std::string temp_template =
+        std::string(SHERPA_ONNX_TEST_TMP_DIR) + "/sherpa_onnx_session_test_XXXXXX";
+    int fd = mkstemp(temp_template.data());
     if (fd != -1) {
       close(fd);
       path_ = temp_template;
