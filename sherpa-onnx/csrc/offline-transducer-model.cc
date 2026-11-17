@@ -5,6 +5,8 @@
 #include "sherpa-onnx/csrc/offline-transducer-model.h"
 
 #include <algorithm>
+#include <charconv>
+#include <stdexcept>
 #include <memory>
 #include <string>
 #include <utility>
@@ -83,10 +85,31 @@ Ort::Value CastIntTensor(Ort::Value tensor,
 void ValidateIntTensorType(ONNXTensorElementDataType type, const char *name) {
   if (type != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32 &&
       type != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
-    SHERPA_ONNX_LOGE("%s should be int32 or int64. Given %d", name,
-                     static_cast<int32_t>(type));
-    SHERPA_ONNX_EXIT(-1);
+    throw std::runtime_error(std::string(name) + " should be int32 or int64");
   }
+}
+
+void ValidateModelIO(const Ort::Session &session, size_t inputs,
+                     size_t min_outputs, const char *name) {
+  if (session.GetInputCount() != inputs ||
+      session.GetOutputCount() < min_outputs) {
+    throw std::runtime_error(std::string("Invalid ") + name +
+                             " inputs or outputs for an offline transducer");
+  }
+}
+
+int32_t ReadPositiveModelMetadata(const Ort::ModelMetadata &metadata,
+                                  const char *key) {
+  Ort::AllocatorWithDefaultOptions allocator;
+  const auto value = LookupCustomModelMetaData(metadata, key, allocator);
+  int32_t result = 0;
+  const auto* end = value.data() + value.size();
+  const auto parsed = std::from_chars(value.data(), end, result);
+  if (parsed.ec != std::errc{} || parsed.ptr != end || result <= 0) {
+    throw std::runtime_error(
+        std::string("Missing or invalid offline transducer metadata: ") + key);
+  }
+  return result;
 }
 
 }  // namespace
@@ -170,6 +193,12 @@ class OfflineTransducerModel::Impl {
                                    joiner_output_names_ptr_.data(),
                                    joiner_output_names_ptr_.size());
 
+    const auto info = logit[0].GetTensorTypeAndShapeInfo();
+    const auto shape = info.GetShape();
+    if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        shape.size() != 2 || shape[1] != vocab_size_) {
+      throw std::runtime_error("Offline transducer joiner output does not match decoder vocabulary");
+    }
     return std::move(logit[0]);
   }
 
@@ -237,6 +266,7 @@ class OfflineTransducerModel::Impl {
       SHERPA_ONNX_EXIT(-1);
     }
 
+    ValidateModelIO(*encoder_sess_, 2, 2, "encoder");
     GetInputNames(encoder_sess_.get(), &encoder_input_names_,
                   &encoder_input_names_ptr_);
 
@@ -278,6 +308,7 @@ class OfflineTransducerModel::Impl {
       SHERPA_ONNX_EXIT(-1);
     }
 
+    ValidateModelIO(*decoder_sess_, 1, 1, "decoder");
     GetInputNames(decoder_sess_.get(), &decoder_input_names_,
                   &decoder_input_names_ptr_);
 
@@ -299,9 +330,8 @@ class OfflineTransducerModel::Impl {
       SHERPA_ONNX_LOGE("%s\n", os.str().c_str());
     }
 
-    Ort::AllocatorWithDefaultOptions allocator;  // used in the macro below
-    SHERPA_ONNX_READ_META_DATA(vocab_size_, "vocab_size");
-    SHERPA_ONNX_READ_META_DATA(context_size_, "context_size");
+    vocab_size_ = ReadPositiveModelMetadata(meta_data, "vocab_size");
+    context_size_ = ReadPositiveModelMetadata(meta_data, "context_size");
   }
 
   void InitJoiner(void *model_data, size_t model_data_length) {
@@ -315,6 +345,7 @@ class OfflineTransducerModel::Impl {
       SHERPA_ONNX_EXIT(-1);
     }
 
+    ValidateModelIO(*joiner_sess_, 2, 1, "joiner");
     GetInputNames(joiner_sess_.get(), &joiner_input_names_,
                   &joiner_input_names_ptr_);
 
